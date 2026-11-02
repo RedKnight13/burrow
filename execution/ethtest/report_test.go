@@ -16,6 +16,7 @@ func sampleResults() []Result {
 		{ID: "d::t::Cancun::1", Fork: "Cancun", Status: Fail, Reason: "logs"},
 		{ID: "e::t::Cancun::2", Fork: "Cancun", Status: Error, Reason: "panic: x"},
 		{ID: "f::t::ShanghaiToCancunAtTime15k::0", Fork: "ShanghaiToCancunAtTime15k", Status: Pass},
+		{ID: "i::t::Cancun::5", Fork: "Cancun", Status: Pass, Reason: "rejected"},
 		{ID: "g::t::Cancun::3", Fork: "Cancun", Status: Fail, Reason: "timeout"},
 		{ID: "h::t::Cancun::4", Fork: "Cancun", Status: Fail, Reason: "crash: panic: x"},
 	}
@@ -35,11 +36,11 @@ func TestScoreboardForkOrder(t *testing.T) {
 
 func TestScoreboardCounts(t *testing.T) {
 	out := string(Scoreboard(sampleResults(), "tests@v21.0.2", "abc"))
-	// Only deterministic classes: fork | total | pass | fail | unsupported | error | pass %
-	if !strings.Contains(out, "| Cancun | 5 | 0 | 3 | 1 | 1 | 0.0% |") {
+	// Only deterministic classes: fork | total | pass | of which rejected | fail | unsupported | error | pass %
+	if !strings.Contains(out, "| Cancun | 6 | 1 | 1 | 3 | 1 | 1 | 16.7% |") {
 		t.Fatalf("Cancun row wrong:\n%s", out)
 	}
-	if !strings.Contains(out, "| **Total** | 8 | 2 | 4 | 1 | 1 | 25.0% |") {
+	if !strings.Contains(out, "| **Total** | 9 | 3 | 1 | 4 | 1 | 1 | 33.3% |") {
 		t.Fatalf("total row wrong:\n%s", out)
 	}
 	if strings.Contains(out, "timeout") || strings.Contains(out, "crash") {
@@ -55,7 +56,7 @@ func TestScoreboardCounts(t *testing.T) {
 
 func TestBreakdown(t *testing.T) {
 	got := Breakdown(sampleResults())
-	want := "pass 2, root 1, logs 1, timeout 1, crash 1, unsupported 1, error 1"
+	want := "pass 2, pass (rejected tx) 1, root 1, logs 1, timeout 1, crash 1, unsupported 1, error 1"
 	if got != want {
 		t.Fatalf("Breakdown = %q, want %q", got, want)
 	}
@@ -74,7 +75,7 @@ func TestScoreboardStable(t *testing.T) {
 
 func TestPassingListSorted(t *testing.T) {
 	got := string(PassingList(sampleResults()))
-	want := "b::t::Prague::0\nf::t::ShanghaiToCancunAtTime15k::0\n"
+	want := "b::t::Prague::0\nf::t::ShanghaiToCancunAtTime15k::0\ni::t::Cancun::5\n"
 	if got != want {
 		t.Fatalf("PassingList = %q, want %q", got, want)
 	}

@@ -229,7 +229,7 @@ test: check bin/solc bin/solang
 .PHONY: test_ethereum
 test_ethereum:
 	@tests/scripts/fetch_eth_fixtures.sh
-	@go test ./execution/ethtest/... ./execution/evm/rlp/... ./cmd/ethtest/...
+	@go test ./execution/ethtest/... ./execution/evm/rlp/... ./execution/evm/ethtx/... ./cmd/ethtest/...
 	@go run ./cmd/ethtest -check -results ethtest-results.txt
 
 .PHONY: test_keys

@@ -3,21 +3,24 @@
 
 Fixtures: `ethereum/execution-specs` `tests@v21.0.2` (sha256 `e2fa7ea2ea516459f9ab92284b2927892f318f4e1f78ca802cb05a6c3b479ed9`)
 
-| Fork | Total | Pass | Fail | Unsupported | Error | Pass % |
-|---|---|---|---|---|---|---|
-| Frontier | 813 | 0 | 1 | 812 | 0 | 0.0% |
-| Homestead | 883 | 0 | 1 | 882 | 0 | 0.0% |
-| TangerineWhistle | 881 | 0 | 1 | 880 | 0 | 0.0% |
-| SpuriousDragon | 961 | 0 | 1 | 960 | 0 | 0.0% |
-| Byzantium | 2332 | 0 | 1 | 2331 | 0 | 0.0% |
-| ConstantinopleFix | 2525 | 0 | 1 | 2524 | 0 | 0.0% |
-| Istanbul | 2652 | 0 | 1 | 2651 | 0 | 0.0% |
-| Berlin | 3593 | 0 | 9 | 3584 | 0 | 0.0% |
-| London | 3872 | 0 | 8 | 3864 | 0 | 0.0% |
-| Paris | 3887 | 0 | 14 | 3873 | 0 | 0.0% |
-| Shanghai | 4086 | 0 | 14 | 4072 | 0 | 0.0% |
-| Cancun | 11578 | 0 | 4346 | 7232 | 0 | 0.0% |
-| Prague | 13919 | 0 | 4346 | 9573 | 0 | 0.0% |
-| Osaka | 14665 | 0 | 4102 | 10563 | 0 | 0.0% |
-| Amsterdam | 16908 | 0 | 4097 | 12811 | 0 | 0.0% |
-| **Total** | 83555 | 0 | 16943 | 66612 | 0 | 0.0% |
+"Pass: rejected tx" counts passes where Ethereum rejects the transaction and Burrow
+rejects it for the same reason. They are included in Pass.
+
+| Fork | Total | Pass | Pass: rejected tx | Fail | Unsupported | Error | Pass % |
+|---|---|---|---|---|---|---|---|
+| Frontier | 813 | 1 | 1 | 1 | 811 | 0 | 0.1% |
+| Homestead | 883 | 1 | 1 | 1 | 881 | 0 | 0.1% |
+| TangerineWhistle | 881 | 1 | 1 | 1 | 879 | 0 | 0.1% |
+| SpuriousDragon | 961 | 2 | 1 | 0 | 959 | 0 | 0.2% |
+| Byzantium | 2332 | 2 | 1 | 0 | 2330 | 0 | 0.1% |
+| ConstantinopleFix | 2525 | 2 | 1 | 0 | 2523 | 0 | 0.1% |
+| Istanbul | 2652 | 2 | 1 | 0 | 2650 | 0 | 0.1% |
+| Berlin | 3593 | 2 | 1 | 8 | 3583 | 0 | 0.1% |
+| London | 3872 | 1 | 1 | 8 | 3863 | 0 | 0.0% |
+| Paris | 3887 | 1 | 1 | 14 | 3872 | 0 | 0.0% |
+| Shanghai | 4086 | 1 | 1 | 14 | 4071 | 0 | 0.0% |
+| Cancun | 11578 | 34 | 34 | 5011 | 6533 | 0 | 0.3% |
+| Prague | 13919 | 34 | 34 | 5011 | 8874 | 0 | 0.2% |
+| Osaka | 14665 | 34 | 34 | 4767 | 9864 | 0 | 0.2% |
+| Amsterdam | 16908 | 47 | 47 | 4763 | 12098 | 0 | 0.3% |
+| **Total** | 83555 | 165 | 160 | 19599 | 63791 | 0 | 0.2% |

@@ -4,7 +4,6 @@ package ethtest
 
 import (
 	"github.com/hyperledger/burrow/crypto"
-	"github.com/hyperledger/burrow/execution/errors"
 	"github.com/hyperledger/burrow/execution/evm/rlp"
 	"github.com/hyperledger/burrow/execution/exec"
 )
@@ -22,18 +21,4 @@ func LogsHash(logs []*exec.LogEvent) [32]byte {
 	var h [32]byte
 	copy(h[:], crypto.Keccak256(rlp.Encode(items)))
 	return h
-}
-
-// logSink records the logs Burrow's EVM emits and ignores other events.
-type logSink struct {
-	logs []*exec.LogEvent
-}
-
-var _ exec.EventSink = (*logSink)(nil)
-
-func (s *logSink) Call(*exec.CallEvent, *errors.Exception) error { return nil }
-func (s *logSink) Print(*exec.PrintEvent) error                  { return nil }
-func (s *logSink) Log(l *exec.LogEvent) error {
-	s.logs = append(s.logs, l)
-	return nil
 }

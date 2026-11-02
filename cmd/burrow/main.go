@@ -89,6 +89,8 @@ func burrow(output commands.Output) *cli.Cli {
 
 	app.Command("errors", "Print error codes",
 		commands.Errors(output))
+	app.Command("fabricx", "Serve an external Fabric-X EVM endorser",
+		commands.Fabricx(output))
 	return app
 }
 

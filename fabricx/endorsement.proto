@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package endorsementpb;
+
+// Wire contract for an external endorser. Field numbers match the Fabric-X
+// gateway's Execute call. This file is not generated from their tree.
+
+service EvmEndorsement {
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+}
+
+message ExecuteRequest {
+  bytes ethereum_tx = 1;
+  bytes proposal_hash = 2;
+  Invocation invocation = 3;
+  int64 timestamp = 4;
+}
+
+message Invocation {
+  string tx_id = 1;
+  repeated bytes args = 2;
+  string chaincode_name = 3;
+  string chaincode_version = 4;
+}
+
+message ExecuteResponse {
+  bytes read_write_set = 1;
+  bytes event = 2;
+  int32 status = 3;
+  string message = 4;
+  bytes payload = 5;
+  bytes endorser_id = 6;
+  bytes signature = 7;
+}

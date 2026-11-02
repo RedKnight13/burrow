@@ -29,9 +29,9 @@ type ExecutionConfig struct {
 
 func DefaultExecutionConfig() *ExecutionConfig {
 	return &ExecutionConfig{
-		CallStackMaxDepth:        0, // Unlimited by default
+		CallStackMaxDepth:        0, // 0 selects Ethereum's limit of 1024
 		DataStackInitialCapacity: evm.DataStackInitialCapacity,
-		DataStackMaxDepth:        0, // Unlimited by default
+		DataStackMaxDepth:        0, // 0 selects Ethereum's limit of 1024
 		TimeoutFactor:            0.33,
 	}
 }

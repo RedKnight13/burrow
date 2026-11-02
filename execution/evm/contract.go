@@ -623,7 +623,15 @@ func (c *Contract) execute(st engine.State, params engine.CallParams) ([]byte, e
 
 			// Establish a frame in which the putative account exists
 			childCallFrame, err := st.CallFrame.NewFrame()
-			maybe.PushError(err)
+			if errors.GetCode(err) == errors.Codes.CallStackOverflow {
+				// As with CALL, reaching the depth limit fails only this CREATE.
+				// break (not continue) so the program counter still advances.
+				stack.Push(Zero256)
+				break
+			}
+			if maybe.PushError(err) {
+				continue
+			}
 			maybe.PushError(engine.CreateAccount(childCallFrame, newAccountAddress))
 
 			// Run the input to get the contract code.
@@ -698,7 +706,10 @@ func (c *Contract) execute(st engine.State, params engine.CallParams) ([]byte, e
 			}
 
 			code := errors.GetCode(err)
-			if code == errors.Codes.None || code == errors.Codes.ExecutionReverted {
+			// Reaching the call depth limit fails only this call, as on Ethereum: the
+			// caller gets 0 and continues.
+			if code == errors.Codes.None || code == errors.Codes.ExecutionReverted ||
+				code == errors.Codes.CallStackOverflow {
 				memory.Write(retOffset, RightPadBytes(returnData, int(retSize)))
 			} else {
 				maybe.PushError(err)

@@ -46,7 +46,11 @@ func leftPadAddress(bs ...byte) crypto.Address {
 	return crypto.AddressFromWord256(binary.LeftPadWord256(bs))
 }
 
-// SECP256K1 Recovery
+// SECP256K1 Recovery, as specified in appendix E of the Ethereum Yellow Paper.
+// The input is hash | v | r | s, 32 bytes each, right-padded with zeros when
+// shorter; anything past 128 bytes is ignored. Invalid input (v not 27 or 28,
+// r or s outside [1, n-1]) or a failed recovery returns empty output, not an
+// error, so the calling contract can check the result.
 func ecrecover(ctx Context) ([]byte, error) {
 	// Deduct gas
 	gasRequired := engine.GasEcRecover
@@ -55,45 +59,31 @@ func ecrecover(ctx Context) ([]byte, error) {
 		return nil, err
 	}
 
-	// layout is:
-	// input:  [ hash |  v   |  r   |  s   ]
-	// bytes:  [ 32   |  32  |  32  |  32  ]
-	// Where:
-	//   hash = message digest
-	//   v = 27 + recovery id (which of 4 possible x coords do we take as public key) (single byte but padded)
-	//   r = encrypted random point
-	//   s = signature proof
+	input := make([]byte, 4*binary.Word256Bytes)
+	copy(input, ctx.Input)
+	hash := input[:32]
+	v := new(big.Int).SetBytes(input[32:64])
+	r := new(big.Int).SetBytes(input[64:96])
+	s := new(big.Int).SetBytes(input[96:128])
 
-	// Signature layout required by ethereum:
-	// sig:    [  r   |  s   |  v  ]
-	// bytes:  [  32  |  32  |  1  ]
-	hash := ctx.Input[:32]
-
-	const compactSigLength = 2*binary.Word256Bytes + 1
-	sig := make([]byte, compactSigLength)
-	// Copy in r, s
-	copy(sig, ctx.Input[2*binary.Word256Bytes:4*binary.Word256Bytes])
-	// Check v is single byte
-	v := ctx.Input[binary.Word256Bytes : 2*binary.Word256Bytes]
-	if !binary.IsZeros(v[:len(v)-1]) {
-		return nil, fmt.Errorf("ecrecover: recovery ID is larger than one byte")
+	n := btcec.S256().N
+	if !v.IsUint64() || (v.Uint64() != 27 && v.Uint64() != 28) ||
+		r.Sign() == 0 || r.Cmp(n) >= 0 || s.Sign() == 0 || s.Cmp(n) >= 0 {
+		return []byte{}, nil
 	}
-	// Copy in v to last element of sig
-	sig[2*binary.Word256Bytes] = v[len(v)-1]
 
-	publicKey, isCompressed, err := btcec.RecoverCompact(btcec.S256(), sig, hash)
+	// btcec's compact signature is [27 + recovery id | r | s].
+	sig := make([]byte, 1+2*binary.Word256Bytes)
+	sig[0] = byte(v.Uint64())
+	copy(sig[1:], input[64:128])
+	publicKey, _, err := btcec.RecoverCompact(btcec.S256(), sig, hash)
 	if err != nil {
-		return nil, err
+		return []byte{}, nil
 	}
 
-	var serializedPublicKey []byte
-	if isCompressed {
-		serializedPublicKey = publicKey.SerializeCompressed()
-	} else {
-		serializedPublicKey = publicKey.SerializeUncompressed()
-	}
-	// First byte is a length-prefix
-	hashed := crypto.Keccak256(serializedPublicKey[1:])
+	// The address is the last 20 bytes of keccak256 of the uncompressed public
+	// key without its 0x04 prefix.
+	hashed := crypto.Keccak256(publicKey.SerializeUncompressed()[1:])
 	hashed = hashed[len(hashed)-crypto.AddressLength:]
 	return binary.LeftPadBytes(hashed, binary.Word256Bytes), nil
 }

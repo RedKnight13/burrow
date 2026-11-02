@@ -17,6 +17,7 @@ import (
 	"github.com/hyperledger/burrow/execution/evm"
 	"github.com/hyperledger/burrow/execution/evm/rlp"
 	"github.com/hyperledger/burrow/execution/exec"
+	"github.com/hyperledger/burrow/execution/native"
 	"github.com/hyperledger/burrow/permission"
 )
 
@@ -65,6 +66,8 @@ const (
 	ReasonIntrinsicGas      Reason = "intrinsic gas too low"
 	ReasonInsufficientFunds Reason = "insufficient funds"
 	ReasonValueTooLarge     Reason = "value exceeds int64"
+	ReasonNativeCall        Reason = "call to native contract"
+	ReasonBalanceOverflow   Reason = "balance exceeds uint64"
 )
 
 // Env is the block a transaction executes in.
@@ -126,7 +129,7 @@ func Apply(raw []byte, st acmstate.Reader, env Env) Result {
 
 	// Charge the full gas allowance up front and bump the nonce. These stand
 	// even if execution fails.
-	acc, err := senderAccount(rec, sender)
+	acc, _, err := senderAccount(rec, sender)
 	if err != nil {
 		return invalid(ReasonUnknownSender, err)
 	}
@@ -150,7 +153,10 @@ func Apply(raw []byte, st acmstate.Reader, env Env) Result {
 
 	res.GasUsed = tx.Gas - gas.Uint64()
 	if err := settleFees(rec, sender, env.Coinbase, tx.GasPrice, gas.Uint64(), res.GasUsed); err != nil {
-		return invalid(ReasonInsufficientFunds, err)
+		// The transaction is valid; Burrow's uint64 balances cannot hold the
+		// result. Nothing is written.
+		return Result{Status: Unsupported, Reason: ReasonBalanceOverflow, Sender: sender,
+			Err: fmt.Errorf("settling fees: %w", err)}
 	}
 	res.RWSet = rec.rwset()
 	return res
@@ -168,7 +174,7 @@ func validate(rec *overlay, tx *Transaction, sender crypto.Address, env Env) (Re
 		res.Sender = sender
 		return res, false
 	}
-	acc, err := senderAccount(rec, sender)
+	acc, senderExists, err := senderAccount(rec, sender)
 	if err != nil {
 		return fail(ReasonUnknownSender, "reading sender: %v", err)
 	}
@@ -190,9 +196,26 @@ func validate(rec *overlay, tx *Transaction, sender crypto.Address, env Env) (Re
 	if cost.Cmp(new(big.Int).SetUint64(acc.Balance)) > 0 {
 		return fail(ReasonInsufficientFunds, "cost %v exceeds balance %d", cost, acc.Balance)
 	}
+	if tx.To != nil && natives.IsRegistered(*tx.To) {
+		res := Result{Status: Unsupported, Reason: ReasonNativeCall, Sender: sender,
+			Err: fmt.Errorf("transaction calls native contract %v directly", *tx.To)}
+		return res, false
+	}
 	needed := []permission.PermFlag{permission.Input, permission.Call}
 	if tx.To == nil {
 		needed[1] = permission.CreateContract
+	}
+	if !senderExists {
+		needed = append(needed, permission.CreateAccount)
+	}
+	if tx.To != nil {
+		callee, err := rec.GetAccount(*tx.To)
+		if err != nil {
+			return fail(ReasonUnknownSender, "reading callee: %v", err)
+		}
+		if callee == nil {
+			needed = append(needed, permission.CreateAccount)
+		}
 	}
 	for _, perm := range needed {
 		if !hasPermission(rec, acc, perm) {
@@ -208,17 +231,21 @@ func validate(rec *overlay, tx *Transaction, sender crypto.Address, env Env) (Re
 }
 
 // senderAccount returns the sender's account, or, as on Ethereum, an empty one
-// (nonce 0, balance 0) when it does not exist.
-func senderAccount(rec *overlay, sender crypto.Address) (*acm.Account, error) {
-	acc, err := rec.GetAccount(sender)
+// (nonce 0, balance 0) when it does not exist; exists reports which.
+func senderAccount(rec *overlay, sender crypto.Address) (acc *acm.Account, exists bool, err error) {
+	acc, err = rec.GetAccount(sender)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if acc == nil {
-		acc = &acm.Account{Address: sender}
+		return &acm.Account{Address: sender}, false, nil
 	}
-	return acc, nil
+	return acc, true, nil
 }
+
+// natives are Burrow's native contracts and precompiles. A transaction may not
+// target one directly yet.
+var natives = native.MustDefaultNatives()
 
 // hasPermission composes the account's own permissions with the chain's global
 // permissions. A permission set in neither is denied.

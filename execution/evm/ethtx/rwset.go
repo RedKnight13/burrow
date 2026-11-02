@@ -151,7 +151,17 @@ func (o *overlay) GetStorage(address crypto.Address, key binary.Word256) ([]byte
 			return copyBytes(v), nil
 		}
 	}
+	if acc, written := o.accounts[address]; written && acc == nil {
+		return nil, nil // removed in this layer
+	}
 	v, err := o.parent.GetStorage(address, key)
+	if err != nil {
+		// Burrow's state errors on storage of an account it does not have;
+		// an account that exists only in this overlay has empty storage.
+		if acc, aerr := o.parent.GetAccount(address); aerr == nil && acc == nil {
+			v, err = nil, nil
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

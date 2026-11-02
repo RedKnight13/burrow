@@ -5,6 +5,7 @@ package ethtx
 import (
 	"bytes"
 	"encoding/hex"
+	"math"
 	"math/big"
 	"testing"
 
@@ -323,19 +324,89 @@ func TestMissingSenderIsAnEmptyAccount(t *testing.T) {
 		t.Fatalf("free tx, no global permissions: got %v %v, want invalid permission", res.Status, res.Reason)
 	}
 
+	// Creating the sender's account needs CreateAccount, not just Input+Call.
 	global := account(t, st, acm.GlobalPermissionsAddress)
 	global.Permissions = permission.NewAccountPermissions(permission.Input, permission.Call)
 	if err := st.UpdateAccount(global); err != nil {
 		t.Fatal(err)
 	}
+	if res := Apply(free, st, env()); res.Status != Invalid || res.Reason != ReasonPermission {
+		t.Fatalf("free tx, global Input+Call: got %v %v, want invalid permission", res.Status, res.Reason)
+	}
+	global.Permissions = permission.NewAccountPermissions(permission.Input, permission.Call, permission.CreateAccount)
+	if err := st.UpdateAccount(global); err != nil {
+		t.Fatal(err)
+	}
 	res := Apply(free, st, env())
 	if res.Status != Success {
-		t.Fatalf("free tx, global Input+Call: got %v %v: %v", res.Status, res.Reason, res.Err)
+		t.Fatalf("free tx, global Input+Call+CreateAccount: got %v %v: %v", res.Status, res.Reason, res.Err)
 	}
 	if err := res.RWSet.ApplyTo(st); err != nil {
 		t.Fatal(err)
 	}
 	if acc := account(t, st, testSender); acc == nil || acc.Sequence != 1 {
 		t.Fatalf("sender after = %+v, want nonce 1", acc)
+	}
+}
+
+func TestCallToNewAccountNeedsCreateAccount(t *testing.T) {
+	fresh := crypto.MustAddressFromHexString("3000000000000000000000000000000000000000")
+	raw := sign(t, unsigned{gasPrice: 1, gas: 50000, to: &fresh, value: 1}, testChainID)
+
+	callOnly := permission.NewAccountPermissions(permission.Input, permission.Call)
+	if res := Apply(raw, newState(t, nil, callOnly), env()); res.Status != Invalid || res.Reason != ReasonPermission {
+		t.Fatalf("without CreateAccount: got %v %v, want invalid permission", res.Status, res.Reason)
+	}
+	withCreate := permission.NewAccountPermissions(permission.Input, permission.Call, permission.CreateAccount)
+	st := newState(t, nil, withCreate)
+	res := Apply(raw, st, env())
+	if res.Status != Success {
+		t.Fatalf("with CreateAccount: got %v %v: %v", res.Status, res.Reason, res.Err)
+	}
+	if err := res.RWSet.ApplyTo(st); err != nil {
+		t.Fatal(err)
+	}
+	if acc := account(t, st, fresh); acc == nil || acc.Balance != 1 {
+		t.Fatalf("new account = %+v, want balance 1", acc)
+	}
+}
+
+// TestCreateCanReadItsOwnStorage: init code that reads an unset slot of the
+// contract being created must see zero, not fail.
+func TestCreateCanReadItsOwnStorage(t *testing.T) {
+	st := newState(t, nil, permission.AllAccountPermissions)
+	// PUSH1 0 SLOAD POP, then return the one-byte runtime code 0x00.
+	initCode := []byte{0x60, 0x00, 0x54, 0x50, 0x60, 0x00, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xf3}
+	res := Apply(sign(t, unsigned{gasPrice: 1, gas: 100000, data: initCode}, testChainID), st, env())
+	if res.Status != Success {
+		t.Fatalf("status %v %v: %v", res.Status, res.Reason, res.Err)
+	}
+}
+
+func TestCallToNativeIsUnsupported(t *testing.T) {
+	ecrecover := crypto.MustAddressFromHexString("0000000000000000000000000000000000000001")
+	res := Apply(sign(t, unsigned{gasPrice: 1, gas: 50000, to: &ecrecover}, testChainID),
+		newState(t, nil, permission.AllAccountPermissions), env())
+	if res.Status != Unsupported || res.Reason != ReasonNativeCall {
+		t.Fatalf("got %v %v, want unsupported %v", res.Status, res.Reason, ReasonNativeCall)
+	}
+	if len(res.RWSet.Writes) != 0 {
+		t.Fatalf("native call wrote %+v", res.RWSet.Writes)
+	}
+}
+
+// TestFeeOverflowIsNotInsufficientFunds: a coinbase balance that cannot hold
+// the fee is a Burrow limit, not a property of the transaction.
+func TestFeeOverflowIsNotInsufficientFunds(t *testing.T) {
+	st := newState(t, []byte{0x00}, permission.AllAccountPermissions)
+	if err := st.UpdateAccount(&acm.Account{Address: coinbase, Balance: math.MaxUint64}); err != nil {
+		t.Fatal(err)
+	}
+	res := Apply(sign(t, unsigned{gasPrice: 1, gas: 50000, to: &contract}, testChainID), st, env())
+	if res.Status != Unsupported || res.Reason != ReasonBalanceOverflow {
+		t.Fatalf("got %v %v, want unsupported %v", res.Status, res.Reason, ReasonBalanceOverflow)
+	}
+	if len(res.RWSet.Writes) != 0 {
+		t.Fatalf("overflowing tx wrote %+v", res.RWSet.Writes)
 	}
 }

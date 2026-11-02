@@ -1,0 +1,38 @@
+# One process. It answers /endorsementpb.EvmEndorsement/Execute.
+# It does not run a chain, and it does not claim a supported Ethereum fork.
+# Panurus, AnonCreds, ISO 20022, and a mainnet exit are not wired here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: burrow-fabricx-endorser
+  labels:
+    app: burrow-fabricx-endorser
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: burrow-fabricx-endorser
+  template:
+    metadata:
+      labels:
+        app: burrow-fabricx-endorser
+    spec:
+      containers:
+        - name: endorser
+          image: hyperledger/burrow:fabricx
+          args: ["fabricx", "--listen", "0.0.0.0:50051"]
+          ports:
+            - name: endorse
+              containerPort: 50051
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: burrow-fabricx-endorser
+spec:
+  selector:
+    app: burrow-fabricx-endorser
+  ports:
+    - name: endorse
+      port: 50051
+      targetPort: endorse

@@ -5,12 +5,36 @@ package fabricx
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"google.golang.org/grpc"
 )
 
 // ExecuteMethod is the gRPC method a Fabric-X gateway calls.
 const ExecuteMethod = "/endorsementpb.EvmEndorsement/Execute"
+
+// ListenGRPC serves Execute until ctx is cancelled. The returned address is
+// the bound host:port, which may differ from addr when addr uses port 0.
+func ListenGRPC(ctx context.Context, addr string, e *Endorser) (string, error) {
+	if e == nil {
+		return "", fmt.Errorf("listen grpc: nil endorser")
+	}
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		return "", fmt.Errorf("listen grpc: %w", err)
+	}
+	srv := grpc.NewServer(grpc.CustomCodec(wireCodec{}))
+	RegisterEndorsement(srv, e)
+	go func() {
+		<-ctx.Done()
+		srv.Stop()
+		_ = lis.Close()
+	}()
+	go func() {
+		_ = srv.Serve(lis)
+	}()
+	return lis.Addr().String(), nil
+}
 
 type wireCodec struct{}
 

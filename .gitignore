@@ -30,4 +30,6 @@ build/
 .pid
 
 # Ethereum conformance fixtures (downloaded)
-tests/ethereum/fixtures/
+tests/ethereum/fixtures
+ethtest-results.txt
+tests/ethereum/.cache

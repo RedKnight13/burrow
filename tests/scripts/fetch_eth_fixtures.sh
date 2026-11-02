@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Downloads the pinned execution-specs fixture release and verifies its checksum.
+# Downloads the pinned execution-specs fixture release, verifies its checksum and
+# unpacks the parts cmd/ethtest uses (state_tests and blockchain_tests).
 # Usage: fetch_eth_fixtures.sh [DEST]   (default: tests/ethereum/fixtures)
+# The archive is kept in $ETH_FIXTURES_CACHE (default: tests/ethereum/.cache).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 lock="$root/tests/ethereum/fixtures.lock"
 dest="${1:-$root/tests/ethereum/fixtures}"
+cache="${ETH_FIXTURES_CACHE:-$root/tests/ethereum/.cache}"
 
 lockval() { sed -n "s/^$1=//p" "$lock"; }
 url="$(lockval url)"
@@ -16,19 +19,24 @@ if [[ -f "$dest/.sha256" && "$(cat "$dest/.sha256")" == "$want" ]]; then
 	exit 0
 fi
 
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+archive="$cache/fixtures-$want.tar.gz"
+sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 
-echo "downloading $url"
-curl -fsSL -o "$tmp/fixtures.tar.gz" "$url"
-got="$(shasum -a 256 "$tmp/fixtures.tar.gz" | cut -d' ' -f1)"
-if [[ "$got" != "$want" ]]; then
-	echo "sha256 mismatch: got $got want $want" >&2
-	exit 1
+if [[ ! -f "$archive" || "$(sha "$archive")" != "$want" ]]; then
+	mkdir -p "$cache"
+	echo "downloading $url"
+	curl -fsSL -o "$archive.part" "$url"
+	got="$(sha "$archive.part")"
+	if [[ "$got" != "$want" ]]; then
+		rm -f "$archive.part"
+		echo "sha256 mismatch: got $got want $want" >&2
+		exit 1
+	fi
+	mv "$archive.part" "$archive"
 fi
 
 rm -rf "$dest"
 mkdir -p "$dest"
-tar -xzf "$tmp/fixtures.tar.gz" -C "$dest" --strip-components=1
+tar -xzf "$archive" -C "$dest" --strip-components=1 fixtures/state_tests fixtures/blockchain_tests
 echo "$want" > "$dest/.sha256"
 echo "fixtures ready: $dest"

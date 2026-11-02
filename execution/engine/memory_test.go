@@ -91,22 +91,21 @@ func TestDynamicMemory_Capacity(t *testing.T) {
 	maybe := new(errors.Maybe)
 	mem := NewDynamicMemory(1, 0x10000000, maybe).(*dynamicMemory)
 
-	assert.Equal(t, big.NewInt(1), mem.Capacity())
+	// Memory starts empty; its size is reported in whole 32-byte words.
+	assert.Equal(t, big.NewInt(0), mem.Capacity())
 
-	capacity := big.NewInt(1234)
-	maybe.PushError(mem.ensureCapacity(capacity.Uint64()))
+	maybe.PushError(mem.ensureCapacity(1234))
 	require.NoError(t, maybe.Error())
-	assert.Equal(t, capacity, mem.Capacity())
+	assert.Equal(t, big.NewInt(1248), mem.Capacity())
 
-	capacity = big.NewInt(123456789)
-	maybe.PushError(mem.ensureCapacity(capacity.Uint64()))
+	maybe.PushError(mem.ensureCapacity(123456789))
 	require.NoError(t, maybe.Error())
-	assert.Equal(t, capacity, mem.Capacity())
+	assert.Equal(t, big.NewInt(123456800), mem.Capacity())
 
 	// Check doesn't shrink or err
 	maybe.PushError(mem.ensureCapacity(12))
 	require.NoError(t, maybe.Error())
-	assert.Equal(t, capacity, mem.Capacity())
+	assert.Equal(t, big.NewInt(123456800), mem.Capacity())
 }
 
 func TestDynamicMemory_ensureCapacity(t *testing.T) {

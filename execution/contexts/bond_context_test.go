@@ -1,6 +1,7 @@
 package contexts
 
 import (
+	"github.com/hyperledger/burrow/binary"
 	"testing"
 
 	"github.com/hyperledger/burrow/acm"
@@ -24,7 +25,7 @@ func TestBondContext(t *testing.T) {
 		accountState.Accounts[address] = &acm.Account{
 			Address:   address,
 			PublicKey: pubKey,
-			Balance:   1337,
+			Balance:   binary.NewUint256(1337),
 		}
 
 		bondContext := &BondContext{

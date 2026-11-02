@@ -5,7 +5,6 @@ package ethtest
 import (
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"testing"
 
 	"github.com/hyperledger/burrow/execution/ethtest/fixture"
@@ -59,12 +58,18 @@ func TestStorageAffectsRoot(t *testing.T) {
 	}
 }
 
-func TestLoadAllocBalanceTooBig(t *testing.T) {
-	a := alloc(t, `{"0x1000000000000000000000000000000000000000":{"nonce":"0x00","balance":"0x010000000000000000","code":"0x","storage":{}}}`)
-	_, err := LoadAlloc(a)
-	var unsupported ErrUnsupported
-	if !errors.As(err, &unsupported) || unsupported.What != "balance > uint64" {
-		t.Fatalf("err = %v, want ErrUnsupported{balance > uint64}", err)
+func TestLoadAllocKeepsLargeBalances(t *testing.T) {
+	a := alloc(t, `{"0x1000000000000000000000000000000000000000":{"nonce":"0x00","balance":"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","code":"0x","storage":{}}}`)
+	st, err := LoadAlloc(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := StateRoot(st, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hex.EncodeToString(got[:]) != mustAllocRoot(t, a) {
+		t.Fatal("a 256-bit balance did not survive loading into Burrow state")
 	}
 }
 

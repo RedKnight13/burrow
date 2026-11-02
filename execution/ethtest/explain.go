@@ -149,7 +149,7 @@ func flattenState(st *acmstate.MemoryState, includeZeroAddr bool) (map[string]fl
 		}
 		fa := flatAccount{
 			nonce:    new(big.Int).SetUint64(acc.Sequence),
-			balance:  new(big.Int).SetUint64(acc.Balance),
+			balance:  acc.Balance.Big(),
 			codeHash: hex.EncodeToString(codeHash(acc.EVMCode)),
 			storage:  make(map[string]*big.Int),
 		}

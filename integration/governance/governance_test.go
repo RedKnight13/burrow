@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hyperledger/burrow/binary"
 	"github.com/hyperledger/burrow/acm"
 	"github.com/hyperledger/burrow/acm/balance"
 	"github.com/hyperledger/burrow/acm/validator"
@@ -154,7 +155,7 @@ func TestGovernance(t *testing.T) {
 			require.NoError(t, err)
 			ca, err := qcli.GetAccount(context.Background(), &rpcquery.GetAccountParam{Address: acc.GetAddress()})
 			require.NoError(t, err)
-			assert.Equal(t, amount, ca.Balance)
+			assert.Equal(t, binary.NewUint256(amount), ca.Balance)
 			// Check we haven't altered permissions
 			assert.Equal(t, genesisDoc.Accounts[5].Permissions, ca.Permissions)
 		})
@@ -189,7 +190,7 @@ func TestGovernance(t *testing.T) {
 			require.NoError(t, err)
 			ca, err := qcli.GetAccount(context.Background(), &rpcquery.GetAccountParam{Address: acc.GetAddress()})
 			require.NoError(t, err)
-			assert.Equal(t, amount, ca.Balance)
+			assert.Equal(t, binary.NewUint256(amount), ca.Balance)
 		})
 
 		t.Run("ChangePowerByAddress", func(t *testing.T) {

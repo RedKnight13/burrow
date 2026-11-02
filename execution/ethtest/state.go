@@ -91,16 +91,17 @@ func LoadAlloc(a fixture.Alloc) (*acmstate.MemoryState, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !acc.Balance.Big().IsUint64() {
-			return nil, ErrUnsupported{What: "balance > uint64"}
-		}
 		if !acc.Nonce.Big().IsUint64() {
 			return nil, ErrUnsupported{What: "nonce > uint64"}
+		}
+		balance, err := binary.Uint256FromBig(acc.Balance.Big())
+		if err != nil {
+			return nil, fmt.Errorf("account %s balance: %w", hexAddr, err)
 		}
 		err = st.UpdateAccount(&acm.Account{
 			Address:     addr,
 			Sequence:    acc.Nonce.Big().Uint64(),
-			Balance:     acc.Balance.Big().Uint64(),
+			Balance:     balance,
 			EVMCode:     acm.Bytecode(acc.Code),
 			Permissions: permission.AllAccountPermissions,
 		})
@@ -142,7 +143,7 @@ func StateRoot(st *acmstate.MemoryState, includeZeroAddr bool) ([32]byte, error)
 			return fmt.Errorf("storage of %v: %w", acc.Address, err)
 		}
 		nonce := new(big.Int).SetUint64(acc.Sequence)
-		balance := new(big.Int).SetUint64(acc.Balance)
+		balance := acc.Balance.Big()
 		kv[string(crypto.Keccak256(acc.Address.Bytes()))] = accountLeaf(nonce, balance, storageRoot(slots), acc.EVMCode)
 		return nil
 	})

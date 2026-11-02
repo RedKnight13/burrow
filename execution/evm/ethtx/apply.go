@@ -5,6 +5,7 @@ package ethtx
 import (
 	"errors"
 	"fmt"
+	"github.com/hyperledger/burrow/binary"
 	"math"
 	"math/big"
 	"time"
@@ -65,9 +66,8 @@ const (
 	ReasonGasLimit          Reason = "gas limit exceeds block"
 	ReasonIntrinsicGas      Reason = "intrinsic gas too low"
 	ReasonInsufficientFunds Reason = "insufficient funds"
-	ReasonValueTooLarge     Reason = "value exceeds int64"
 	ReasonNativeCall        Reason = "call to native contract"
-	ReasonBalanceOverflow   Reason = "balance exceeds uint64"
+	ReasonBalanceOverflow   Reason = "balance exceeds 2^256"
 )
 
 // Env is the block a transaction executes in.
@@ -134,7 +134,13 @@ func Apply(raw []byte, st acmstate.Reader, env Env) Result {
 		return invalid(ReasonUnknownSender, err)
 	}
 	upfront := new(big.Int).Mul(new(big.Int).SetUint64(tx.Gas), tx.GasPrice)
-	acc.Balance -= upfront.Uint64()
+	charge, err := binary.Uint256FromBig(upfront)
+	if err != nil {
+		return invalid(ReasonInsufficientFunds, err)
+	}
+	if err := acc.Debit(charge); err != nil {
+		return invalid(ReasonInsufficientFunds, err)
+	}
 	acc.Sequence++
 	if err := rec.UpdateAccount(acc); err != nil {
 		return invalid(ReasonUnknownSender, err)
@@ -193,7 +199,7 @@ func validate(rec *overlay, tx *Transaction, sender crypto.Address, env Env) (Re
 	}
 	cost := new(big.Int).Mul(new(big.Int).SetUint64(tx.Gas), tx.GasPrice)
 	cost.Add(cost, tx.Value)
-	if cost.Cmp(new(big.Int).SetUint64(acc.Balance)) > 0 {
+	if cost.Cmp(acc.Balance.Big()) > 0 {
 		return fail(ReasonInsufficientFunds, "cost %v exceeds balance %d", cost, acc.Balance)
 	}
 	if tx.To != nil && natives.IsRegistered(*tx.To) {
@@ -221,11 +227,6 @@ func validate(rec *overlay, tx *Transaction, sender crypto.Address, env Env) (Re
 		if !hasPermission(rec, acc, perm) {
 			return fail(ReasonPermission, "sender %v lacks %v permission", sender, perm)
 		}
-	}
-	if !tx.Value.IsInt64() {
-		res := Result{Status: Unsupported, Reason: ReasonValueTooLarge, Sender: sender,
-			Err: fmt.Errorf("value %v exceeds Burrow's int64 transfer limit", tx.Value)}
-		return res, false
 	}
 	return Result{}, true
 }
@@ -342,7 +343,11 @@ func settleFees(rec *overlay, sender, coinbase crypto.Address, price *big.Int, g
 	if err != nil {
 		return err
 	}
-	if err := acc.AddToBalance(refund.Uint64()); err != nil {
+	refundAmount, err := binary.Uint256FromBig(refund)
+	if err != nil {
+		return err
+	}
+	if err := acc.Credit(refundAmount); err != nil {
 		return err
 	}
 	if err := rec.UpdateAccount(acc); err != nil {
@@ -359,7 +364,11 @@ func settleFees(rec *overlay, sender, coinbase crypto.Address, price *big.Int, g
 	if cb == nil {
 		cb = &acm.Account{Address: coinbase}
 	}
-	if err := cb.AddToBalance(fee.Uint64()); err != nil {
+	feeAmount, err := binary.Uint256FromBig(fee)
+	if err != nil {
+		return err
+	}
+	if err := cb.Credit(feeAmount); err != nil {
 		return err
 	}
 	return rec.UpdateAccount(cb)

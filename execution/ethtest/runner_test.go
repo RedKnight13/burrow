@@ -187,11 +187,6 @@ func TestRunCaseUnsupported(t *testing.T) {
 	}{
 		{"typed tx", func(st *fixture.StateTest) { st.Post["Cancun"][0].TxBytes = []byte{0x02, 0xc0} },
 			"unsupported: typed transaction"},
-		{"big balance", func(st *fixture.StateTest) {
-			acc := st.Pre[senderAddr]
-			acc.Balance = fixture.Quantity{Int: new(big.Int).Lsh(big.NewInt(1), 64)}
-			st.Pre[senderAddr] = acc
-		}, "unsupported: balance > uint64"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -273,5 +268,21 @@ func TestCasesSortedAndRunnable(t *testing.T) {
 	}
 	if res := cases[0].Run(); res.ID != want {
 		t.Fatalf("Run().ID = %q", res.ID)
+	}
+}
+
+// TestRunCaseLargeBalance: a sender holding more than 2^64 runs normally.
+func TestRunCaseLargeBalance(t *testing.T) {
+	st := signedCase(t, "0x00")
+	acc := st.Pre[senderAddr]
+	acc.Balance = fixture.Quantity{Int: new(big.Int).Lsh(big.NewInt(1), 100)}
+	st.Pre[senderAddr] = acc
+	setExpected(t, &st, func(post fixture.Alloc) {
+		sender := post[senderAddr]
+		sender.Nonce = fixture.Quantity{Int: big.NewInt(1)}
+		post[senderAddr] = sender
+	})
+	if res := RunCase("x", st, "Cancun", 0); res.Status != Pass {
+		t.Fatalf("got %v %q, want pass", res.Status, res.Reason)
 	}
 }

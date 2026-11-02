@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"github.com/hyperledger/burrow/binary"
 	"testing"
 
 	"github.com/hyperledger/burrow/acm"
@@ -41,7 +42,7 @@ func TestState_Sync(t *testing.T) {
 
 	acc, err := backend.GetAccount(address)
 	require.NoError(t, err)
-	assert.Equal(t, acc.Balance, amt)
+	assert.Equal(t, binary.NewUint256(amt), acc.Balance)
 }
 
 func TestState_NewCache(t *testing.T) {
@@ -65,7 +66,7 @@ func TestState_NewCache(t *testing.T) {
 
 	acc, err = MustAccount(cache, address)
 	require.NoError(t, err)
-	assert.Equal(t, amt, acc.Balance)
+	assert.Equal(t, binary.NewUint256(amt), acc.Balance)
 
 	cache, err = cache.NewFrame(acmstate.ReadOnly)
 	require.NoError(t, err)

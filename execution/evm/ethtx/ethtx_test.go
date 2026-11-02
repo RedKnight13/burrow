@@ -5,7 +5,6 @@ package ethtx
 import (
 	"bytes"
 	"encoding/hex"
-	"math"
 	"math/big"
 	"testing"
 
@@ -72,7 +71,7 @@ func newState(t *testing.T, code []byte, senderPerms permission.AccountPermissio
 	// the permissions set on each account.
 	st.Accounts[acm.GlobalPermissionsAddress].Permissions = permission.ZeroAccountPermissions
 	for _, acc := range []*acm.Account{
-		{Address: testSender, Balance: 1_000_000_000, Permissions: senderPerms},
+		{Address: testSender, Balance: binary.NewUint256(1_000_000_000), Permissions: senderPerms},
 		{Address: contract, EVMCode: code, Permissions: permission.AllAccountPermissions},
 	} {
 		if err := st.UpdateAccount(acc); err != nil {
@@ -147,7 +146,7 @@ func TestApplyCallTransfersValueAndChargesFee(t *testing.T) {
 	if res.GasUsed != 21000 {
 		t.Fatalf("gas used %d, want 21000 (intrinsic only; STOP costs nothing in Burrow)", res.GasUsed)
 	}
-	if account(t, st, testSender).Balance != 1_000_000_000 || account(t, st, testSender).Sequence != 0 {
+	if bal(account(t, st, testSender)) != 1_000_000_000 || account(t, st, testSender).Sequence != 0 {
 		t.Fatal("Apply mutated the caller's state")
 	}
 
@@ -155,13 +154,13 @@ func TestApplyCallTransfersValueAndChargesFee(t *testing.T) {
 		t.Fatal(err)
 	}
 	sender := account(t, st, testSender)
-	if sender.Balance != 1_000_000_000-5-21000*2 || sender.Sequence != 1 {
-		t.Fatalf("sender after = balance %d nonce %d", sender.Balance, sender.Sequence)
+	if bal(sender) != 1_000_000_000-5-21000*2 || sender.Sequence != 1 {
+		t.Fatalf("sender after = balance %d nonce %d", bal(sender), sender.Sequence)
 	}
-	if got := account(t, st, contract).Balance; got != 5 {
+	if got := bal(account(t, st, contract)); got != 5 {
 		t.Fatalf("contract balance %d, want 5", got)
 	}
-	if got := account(t, st, coinbase); got == nil || got.Balance != 21000*2 {
+	if got := account(t, st, coinbase); got == nil || bal(got) != 21000*2 {
 		t.Fatalf("coinbase = %+v, want balance %d", got, 21000*2)
 	}
 }
@@ -244,10 +243,10 @@ func TestFailedCallKeepsNonceAndFeeOnly(t *testing.T) {
 		t.Fatalf("failed call kept storage write %x", v)
 	}
 	sender := account(t, st, testSender)
-	if sender.Sequence != 1 || sender.Balance != 1_000_000_000-res.GasUsed {
-		t.Fatalf("sender after failure: nonce %d balance %d (gas used %d)", sender.Sequence, sender.Balance, res.GasUsed)
+	if sender.Sequence != 1 || bal(sender) != 1_000_000_000-res.GasUsed {
+		t.Fatalf("sender after failure: nonce %d balance %d (gas used %d)", sender.Sequence, bal(sender), res.GasUsed)
 	}
-	if account(t, st, contract).Balance != 0 {
+	if bal(account(t, st, contract)) != 0 {
 		t.Fatal("value transferred despite failure")
 	}
 }
@@ -382,7 +381,7 @@ func TestCallToNewAccountNeedsCreateAccount(t *testing.T) {
 	if err := res.RWSet.ApplyTo(st); err != nil {
 		t.Fatal(err)
 	}
-	if acc := account(t, st, fresh); acc == nil || acc.Balance != 1 {
+	if acc := account(t, st, fresh); acc == nil || bal(acc) != 1 {
 		t.Fatalf("new account = %+v, want balance 1", acc)
 	}
 }
@@ -412,10 +411,12 @@ func TestCallToNativeIsUnsupported(t *testing.T) {
 }
 
 // TestFeeOverflowIsNotInsufficientFunds: a coinbase balance that cannot hold
-// the fee is a Burrow limit, not a property of the transaction.
+// the fee (one already at 2^256 - 1) is a limit, not a property of the
+// transaction.
 func TestFeeOverflowIsNotInsufficientFunds(t *testing.T) {
 	st := newState(t, []byte{0x00}, permission.AllAccountPermissions)
-	if err := st.UpdateAccount(&acm.Account{Address: coinbase, Balance: math.MaxUint64}); err != nil {
+	full, _ := binary.Uint256FromBig(new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1)))
+	if err := st.UpdateAccount(&acm.Account{Address: coinbase, Balance: full}); err != nil {
 		t.Fatal(err)
 	}
 	res := Apply(sign(t, unsigned{gasPrice: 1, gas: 50000, to: &contract}, testChainID), st, env())
@@ -425,4 +426,10 @@ func TestFeeOverflowIsNotInsufficientFunds(t *testing.T) {
 	if len(res.RWSet.Writes) != 0 {
 		t.Fatalf("overflowing tx wrote %+v", res.RWSet.Writes)
 	}
+}
+
+// bal returns a test account's balance, which these tests keep within 64 bits.
+func bal(acc *acm.Account) uint64 {
+	n, _ := acc.Balance.Uint64()
+	return n
 }

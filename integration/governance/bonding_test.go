@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hyperledger/burrow/bcm"
+	"github.com/hyperledger/burrow/binary"
 	"github.com/hyperledger/burrow/config"
 	"github.com/hyperledger/burrow/core"
 	"github.com/hyperledger/burrow/integration"
@@ -64,7 +65,9 @@ func TestBonding(t *testing.T) {
 		require.NoError(t, err)
 		accAfter := getAccount(t, qcli, inputAccount)
 		// ensure power is subtracted from original account balance
-		require.Equal(t, accBefore.GetBalance()-power, accAfter.GetBalance())
+		want, err := accBefore.Balance.Sub(binary.NewUint256(power))
+		require.NoError(t, err)
+		require.Equal(t, want, accAfter.Balance)
 
 		// make sure our new validator exists in the set
 		vsOut := getValidators(t, qcli)
@@ -89,7 +92,7 @@ func TestBonding(t *testing.T) {
 		vsOut = getValidators(t, qcli)
 		require.NotContains(t, vsOut, valAccount.GetAddress())
 		accAfter = getAccount(t, qcli, inputAccount)
-		require.Equal(t, accBefore.GetBalance(), accAfter.GetBalance())
+		require.Equal(t, accBefore.Balance, accAfter.Balance)
 	})
 
 	// TODO:

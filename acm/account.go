@@ -33,21 +33,35 @@ func (acc *Account) GetAddress() crypto.Address {
 	return acc.Address
 }
 
+// AddToBalance credits amount to the account.
 func (acc *Account) AddToBalance(amount uint64) error {
-	if binary.IsUint64SumOverflow(acc.Balance, amount) {
+	return acc.Credit(binary.NewUint256(amount))
+}
+
+// SubtractFromBalance debits amount from the account.
+func (acc *Account) SubtractFromBalance(amount uint64) error {
+	return acc.Debit(binary.NewUint256(amount))
+}
+
+// Credit adds amount to the balance, failing if it would exceed 2^256 - 1.
+func (acc *Account) Credit(amount binary.Uint256) error {
+	sum, err := acc.Balance.Add(amount)
+	if err != nil {
 		return errors.Errorf(errors.Codes.IntegerOverflow,
-			"uint64 overflow: attempt to add %v to the balance of %s", amount, acc.Address)
+			"uint256 overflow: attempt to add %v to the balance of %s", amount, acc.Address)
 	}
-	acc.Balance += amount
+	acc.Balance = sum
 	return nil
 }
 
-func (acc *Account) SubtractFromBalance(amount uint64) error {
-	if amount > acc.Balance {
+// Debit subtracts amount from the balance, failing if the balance is smaller.
+func (acc *Account) Debit(amount binary.Uint256) error {
+	diff, err := acc.Balance.Sub(amount)
+	if err != nil {
 		return errors.Errorf(errors.Codes.InsufficientBalance,
 			"insufficient funds: attempt to subtract %v from the balance of %s", amount, acc.Address)
 	}
-	acc.Balance -= amount
+	acc.Balance = diff
 	return nil
 }
 

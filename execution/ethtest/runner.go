@@ -68,13 +68,15 @@ var execute = func(c callInput) error {
 
 // RunCase runs post[fork][i] of t.
 func RunCase(id string, t fixture.StateTest, fork string, i int) Result {
-	res, _ := runCase(id, t, fork, i)
+	res, _ := runCase(id, t, fork, i, nil)
 	return res
 }
 
 // runCase also returns the post-execution state (nil when Burrow was not run),
-// for diffing.
-func runCase(id string, t fixture.StateTest, fork string, i int) (res Result, st *acmstate.MemoryState) {
+// for diffing. onExecute, if set, is called just before Burrow's EVM runs.
+// A panic inside the EVM is a Burrow defect ("crash"); any other panic is a
+// harness bug (Error).
+func runCase(id string, t fixture.StateTest, fork string, i int, onExecute func()) (res Result, st *acmstate.MemoryState) {
 	res = Result{ID: id, Fork: fork}
 	defer func() {
 		if r := recover(); r != nil {
@@ -145,7 +147,10 @@ func runCase(id string, t fixture.StateTest, fork string, i int) (res Result, st
 
 	sink := &logSink{}
 	st = loaded
-	_ = execute(callInput{
+	if onExecute != nil {
+		onExecute()
+	}
+	crash := guarded(callInput{
 		state: st,
 		blockchain: &engine.TestBlockchain{
 			BlockHeight: t.Env.Number.Big().Uint64(),
@@ -162,6 +167,9 @@ func runCase(id string, t fixture.StateTest, fork string, i int) (res Result, st
 		},
 		code: callee.EVMCode,
 	})
+	if crash != "" {
+		return fail(crash)
+	}
 
 	root, err := StateRoot(st, hasZeroAddress(t.Pre))
 	if err != nil {
@@ -176,6 +184,17 @@ func runCase(id string, t fixture.StateTest, fork string, i int) (res Result, st
 	}
 	res.Status = Pass
 	return res, st
+}
+
+// guarded runs Burrow's EVM and turns a panic into a crash reason.
+func guarded(c callInput) (crash string) {
+	defer func() {
+		if r := recover(); r != nil {
+			crash = fmt.Sprintf("crash: panic: %v", r)
+		}
+	}()
+	_ = execute(c)
+	return ""
 }
 
 // present reports whether an optional transaction field carries anything.
@@ -213,10 +232,27 @@ func senderFromKey(key []byte) (crypto.Address, error) {
 	return addr, nil
 }
 
-// RunFile runs every case in one state-test file. IDs are
-// <path relative to stateRoot>::<test name>::<fork>::<index>, and results are
-// sorted by ID.
-func RunFile(stateRoot, path string) ([]Result, error) {
+// Case is one entry of a fixture's post[fork] array.
+type Case struct {
+	ID    string
+	Fork  string
+	Index int
+	Test  fixture.StateTest
+}
+
+func (c Case) Run() Result {
+	return c.RunWith(nil)
+}
+
+// RunWith runs the case, calling onExecute just before Burrow's EVM starts.
+func (c Case) RunWith(onExecute func()) Result {
+	res, _ := runCase(c.ID, c.Test, c.Fork, c.Index, onExecute)
+	return res
+}
+
+// Cases lists every case in one state-test file, sorted by ID. IDs are
+// <path relative to stateRoot>::<test name>::<fork>::<index>.
+func Cases(stateRoot, path string) ([]Case, error) {
 	tests, err := fixture.LoadStateTests(path)
 	if err != nil {
 		return nil, err
@@ -226,15 +262,32 @@ func RunFile(stateRoot, path string) ([]Result, error) {
 		return nil, fmt.Errorf("relative path of %s: %w", path, err)
 	}
 	rel = filepath.ToSlash(rel)
-	var results []Result
+	var cases []Case
 	for name, t := range tests {
 		for fork, posts := range t.Post {
 			for i := range posts {
-				id := fmt.Sprintf("%s::%s::%s::%d", rel, name, fork, i)
-				results = append(results, RunCase(id, t, fork, i))
+				cases = append(cases, Case{
+					ID:    fmt.Sprintf("%s::%s::%s::%d", rel, name, fork, i),
+					Fork:  fork,
+					Index: i,
+					Test:  t,
+				})
 			}
 		}
 	}
-	sort.Slice(results, func(a, b int) bool { return results[a].ID < results[b].ID })
+	sort.Slice(cases, func(a, b int) bool { return cases[a].ID < cases[b].ID })
+	return cases, nil
+}
+
+// RunFile runs every case in one state-test file, in ID order.
+func RunFile(stateRoot, path string) ([]Result, error) {
+	cases, err := Cases(stateRoot, path)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]Result, len(cases))
+	for i, c := range cases {
+		results[i] = c.Run()
+	}
 	return results, nil
 }

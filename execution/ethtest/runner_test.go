@@ -123,13 +123,28 @@ func TestRunCaseBadIndexIsError(t *testing.T) {
 	}
 }
 
-func TestRunCasePanicIsError(t *testing.T) {
+func TestRunCaseBurrowPanicIsCrash(t *testing.T) {
 	saved := execute
 	defer func() { execute = saved }()
 	execute = func(c callInput) error { panic("boom") }
 	res := RunCase("x", stopCase(t), "Cancun", 0)
-	if res.Status != Error || !strings.HasPrefix(res.Reason, "panic:") {
-		t.Fatalf("got %v %q, want error panic:", res.Status, res.Reason)
+	if res.Status != Fail || res.Reason != "crash: panic: boom" {
+		t.Fatalf("got %v %q, want fail crash: panic: boom", res.Status, res.Reason)
+	}
+}
+
+func TestRunWithCallsHookBeforeBurrow(t *testing.T) {
+	saved := execute
+	defer func() { execute = saved }()
+	var order []string
+	execute = func(c callInput) error { order = append(order, "execute"); return nil }
+	cases, err := Cases("fixture/testdata", "fixture/testdata/state_min.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases[0].RunWith(func() { order = append(order, "hook") })
+	if strings.Join(order, ",") != "hook,execute" {
+		t.Fatalf("order = %v", order)
 	}
 }
 
@@ -200,5 +215,19 @@ func TestRunCaseExecutesBurrow(t *testing.T) {
 	st.Post["Cancun"][0].Hash = want[:]
 	if res := RunCase("x", st, "Cancun", 0); res.Status != Pass {
 		t.Fatalf("with stored root: got %v %q, want pass", res.Status, res.Reason)
+	}
+}
+
+func TestCasesSortedAndRunnable(t *testing.T) {
+	cases, err := Cases("fixture/testdata", "fixture/testdata/state_min.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "state_min.json::tests/minimal.py::test_stop[fork_Cancun-state_test]::Cancun::0"
+	if len(cases) != 1 || cases[0].ID != want || cases[0].Fork != "Cancun" || cases[0].Index != 0 {
+		t.Fatalf("cases = %+v", cases)
+	}
+	if res := cases[0].Run(); res.ID != want {
+		t.Fatalf("Run().ID = %q", res.ID)
 	}
 }

@@ -20,7 +20,13 @@ if [[ -f "$dest/.sha256" && "$(cat "$dest/.sha256")" == "$want" ]]; then
 fi
 
 archive="$cache/fixtures-$want.tar.gz"
-sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+sha() {
+	if command -v sha256sum >/dev/null; then
+		sha256sum "$1" | cut -d' ' -f1
+	else
+		shasum -a 256 "$1" | cut -d' ' -f1
+	fi
+}
 
 if [[ ! -f "$archive" || "$(sha "$archive")" != "$want" ]]; then
 	mkdir -p "$cache"

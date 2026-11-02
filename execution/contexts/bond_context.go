@@ -2,6 +2,7 @@ package contexts
 
 import (
 	"fmt"
+	"github.com/hyperledger/burrow/binary"
 	"math/big"
 
 	"github.com/hyperledger/burrow/acm/acmstate"
@@ -48,7 +49,7 @@ func (ctx *BondContext) Execute(txe *exec.TxExecution, p payload.Payload) error 
 	amount := ctx.tx.Input.GetAmount()
 	if amount == 0 {
 		return fmt.Errorf("nothing to bond")
-	} else if account.Balance < amount {
+	} else if account.Balance.Cmp(binary.NewUint256(amount)) < 0 {
 		return fmt.Errorf("insufficient funds, account %s only has balance %v and "+
 			"we are deducting %v", account.Address, account.Balance, amount)
 	}

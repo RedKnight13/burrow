@@ -321,7 +321,7 @@ func (ctx *context) ResolveFunc(module, field string) lifeExec.FunctionImport {
 				panic(err)
 			}
 			balance := acc.Balance
-			err = acc.AddToBalance(balance)
+			err = acc.Credit(balance)
 			if err != nil {
 				panic(err)
 			}
@@ -545,7 +545,8 @@ func (ctx *context) ResolveFunc(module, field string) lifeExec.FunctionImport {
 
 			// ewasm value is little endian 128 bit value
 			bs := make([]byte, 16)
-			binary.LittleEndian.PutUint64(bs, acc.Balance)
+			low, _ := acc.Balance.Uint64() // ewasm reads 128 bits; Burrow's wasm side carries 64
+			binary.LittleEndian.PutUint64(bs, low)
 
 			copy(vm.Memory[balancePtr:], bs)
 

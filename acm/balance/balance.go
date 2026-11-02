@@ -137,6 +137,11 @@ func NativeToWei(n uint64) *big.Int {
 	return new(big.Int).Mul(x, ethInWei)
 }
 
+// NativeToWeiBig is NativeToWei for an amount of any size.
+func NativeToWeiBig(n *big.Int) *big.Int {
+	return new(big.Int).Mul(n, ethInWei)
+}
+
 func WeiToNative(x *big.Int) *big.Int {
 	return new(big.Int).Div(x, ethInWei)
 }

@@ -6,6 +6,7 @@ package acm
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/hyperledger/burrow/binary"
 	"testing"
 
 	"github.com/hyperledger/burrow/event/query"
@@ -47,7 +48,7 @@ func TestMarshalJSON(t *testing.T) {
 		},
 	}
 	acc.Sequence = 4
-	acc.Balance = 10
+	acc.Balance = binary.NewUint256(10)
 	bs, err := json.Marshal(acc)
 
 	expected := fmt.Sprintf(`{"Address":"%s","PublicKey":{"CurveType":"ed25519","PublicKey":"%s"},`+

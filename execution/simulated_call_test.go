@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"fmt"
+	"github.com/hyperledger/burrow/binary"
 	"math/big"
 	"testing"
 
@@ -73,7 +74,7 @@ func TestCallSimDelegate(t *testing.T) {
 		err = up.UpdateAccount(&acm.Account{
 			Address:     from.GetAddress(),
 			PublicKey:   from.GetPublicKey(),
-			Balance:     9999999,
+			Balance:     binary.NewUint256(9999999),
 			Permissions: permission.DefaultAccountPermissions,
 		})
 		if err != nil {

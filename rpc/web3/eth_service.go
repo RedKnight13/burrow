@@ -194,7 +194,7 @@ func (srv *EthService) EthGetBalance(req *EthGetBalanceParams) (*EthGetBalanceRe
 	}
 
 	return &EthGetBalanceResult{
-		GetBalanceResult: web3hex.Encoder.Bytes(balance.NativeToWei(acc.Balance).Bytes()),
+		GetBalanceResult: web3hex.Encoder.Bytes(balance.NativeToWeiBig(acc.Balance.Big()).Bytes()),
 	}, nil
 }
 

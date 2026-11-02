@@ -1,0 +1,4 @@
+release=tests@v21.0.2
+url=https://github.com/ethereum/execution-specs/releases/download/tests%40v21.0.2/fixtures.tar.gz
+sha256=e2fa7ea2ea516459f9ab92284b2927892f318f4e1f78ca802cb05a6c3b479ed9
+state_cases=83555

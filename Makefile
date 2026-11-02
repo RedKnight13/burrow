@@ -225,6 +225,13 @@ clean_js:
 test: check bin/solc bin/solang
 	@tests/scripts/bin_wrapper.sh go test ./... ${GO_TEST_ARGS}
 
+# Run the Ethereum state-test conformance check (downloads ~1GB of fixtures once)
+.PHONY: test_ethereum
+test_ethereum:
+	@tests/scripts/fetch_eth_fixtures.sh
+	@go test ./execution/ethtest/... ./execution/evm/rlp/... ./cmd/ethtest/...
+	@go run ./cmd/ethtest -check -results ethtest-results.txt
+
 .PHONY: test_keys
 test_keys:
 	burrow_bin="${REPO}/bin/burrow" tests/keys_server/test.sh

@@ -28,3 +28,8 @@ js/dist
 helm/package
 build/
 .pid
+
+# Ethereum conformance fixtures (downloaded)
+tests/ethereum/fixtures
+ethtest-results.txt
+tests/ethereum/.cache

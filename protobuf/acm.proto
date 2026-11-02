@@ -22,8 +22,9 @@ message Account {
     crypto.PublicKey PublicKey = 2;
     // Sequence counts the number of transactions that have been accepted from this account
     uint64 Sequence = 3;
-    // The account's current native token balance
-    uint64 Balance = 4;
+    // The account's current native token balance, an unsigned integer of up to
+    // 256 bits (minimal big-endian bytes) as on Ethereum
+    bytes Balance = 4 [(gogoproto.customtype) = "github.com/hyperledger/burrow/binary.Uint256", (gogoproto.nullable) = false];
     // We expect exactly one of EVMCode, WASMCode, and NativeName to be non-empty
     // EVM bytecode
     bytes EVMCode = 5 [(gogoproto.customtype) = "Bytecode", (gogoproto.nullable) = false];

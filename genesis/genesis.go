@@ -79,7 +79,7 @@ func PermissionsAccount(globalPerms permission.AccountPermissions) *acm.Account 
 
 	return &acm.Account{
 		Address:     acm.GlobalPermissionsAddress,
-		Balance:     1337,
+		Balance:     binary.NewUint256(1337),
 		Permissions: globalPerms,
 	}
 }
@@ -155,7 +155,7 @@ func GenesisAccountFromAccount(name string, account *acm.Account) Account {
 		Permissions: account.Permissions,
 		BasicAccount: BasicAccount{
 			Address: account.Address,
-			Amount:  account.Balance,
+			Amount:  genesisAmount(account.Balance),
 		},
 	}
 }
@@ -177,7 +177,7 @@ func (genesisAccount *Account) AcmAccount() *acm.Account {
 	return &acm.Account{
 		Address:     genesisAccount.Address,
 		PublicKey:   genesisAccount.PublicKey,
-		Balance:     genesisAccount.Amount,
+		Balance:     binary.NewUint256(genesisAccount.Amount),
 		Permissions: genesisAccount.Permissions,
 	}
 }
@@ -275,4 +275,14 @@ func MakeGenesisDocFromAccounts(chainName string, salt []byte, genesisTime time.
 		Accounts:          genesisAccounts,
 		Validators:        genesisValidators,
 	}
+}
+
+// genesisAmount converts a balance to a genesis amount, which is still limited
+// to 64 bits.
+func genesisAmount(balance binary.Uint256) uint64 {
+	n, ok := balance.Uint64()
+	if !ok {
+		panic(fmt.Sprintf("balance %v does not fit in a 64-bit genesis amount", balance))
+	}
+	return n
 }

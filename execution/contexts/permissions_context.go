@@ -103,7 +103,9 @@ func (ctx *PermissionsContext) Execute(txe *exec.TxExecution, p payload.Payload)
 	}
 
 	// Good!
-	inAcc.Balance -= value
+	if err := inAcc.SubtractFromBalance(value); err != nil {
+		return err
+	}
 	err = inAcc.SubtractFromBalance(value)
 	if err != nil {
 		return errors.Errorf(errors.Codes.InsufficientFunds,

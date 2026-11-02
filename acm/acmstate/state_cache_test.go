@@ -43,7 +43,7 @@ func TestStateCache_GetAccount(t *testing.T) {
 
 	accOut, err = cache.GetAccount(acc.Address)
 	require.NoError(t, err)
-	accOut.Balance = 100000
+	accOut.Balance = binary.NewUint256(100000)
 	cache2 := NewCache(cache)
 	accOut2, err := cache2.GetAccount(acc.Address)
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestStateCache_Miss(t *testing.T) {
 	acc1Address := addressOf("acc1")
 	acc1, err := cache.GetAccount(acc1Address)
 	require.NoError(t, err)
-	assert.Equal(t, uint64(0), acc1.Balance)
+	assert.Equal(t, binary.NewUint256(0), acc1.Balance)
 
 	acc1Exp := readBackend.Accounts[acc1Address]
 	assert.True(t, acc1Exp.Equal(acc1), "accounts should be equal")
@@ -73,14 +73,14 @@ func TestStateCache_UpdateAccount(t *testing.T) {
 	// Create acccount
 	accNew := acm.NewAccountFromSecret("accNew")
 	balance := uint64(0xff)
-	accNew.Balance = balance
+	accNew.Balance = binary.NewUint256(balance)
 	err := cache.UpdateAccount(accNew)
 	require.NoError(t, err)
 
 	// Check cache
 	accNewOut, err := cache.GetAccount(accNew.Address)
 	require.NoError(t, err)
-	assert.Equal(t, balance, accNewOut.Balance)
+	assert.Equal(t, binary.NewUint256(balance), accNewOut.Balance)
 
 	// Check not stored in backend
 	accNewOut, err = backend.GetAccount(accNew.Address)
@@ -92,23 +92,23 @@ func TestStateCache_UpdateAccount(t *testing.T) {
 	require.NoError(t, err)
 	accNewOut, err = backend.GetAccount(accNew.Address)
 	require.NoError(t, err)
-	assert.Equal(t, balance, accNewOut.Balance)
+	assert.Equal(t, binary.NewUint256(balance), accNewOut.Balance)
 
 	// Alter in cache
 	newBalance := uint64(0xff00aa)
-	accNew.Balance = newBalance
+	accNew.Balance = binary.NewUint256(newBalance)
 	err = cache.UpdateAccount(accNew)
 	require.NoError(t, err)
 
 	// Check cache
 	accNewOut, err = cache.GetAccount(accNew.Address)
 	require.NoError(t, err)
-	assert.Equal(t, newBalance, accNewOut.Balance)
+	assert.Equal(t, binary.NewUint256(newBalance), accNewOut.Balance)
 
 	// Check backend unchanged
 	accNewOut, err = backend.GetAccount(accNew.Address)
 	require.NoError(t, err)
-	assert.Equal(t, balance, accNewOut.Balance)
+	assert.Equal(t, binary.NewUint256(balance), accNewOut.Balance)
 
 	require.Equal(t, accNewOut == accNew, false)
 }
@@ -233,7 +233,7 @@ func TestStateCache_Sync(t *testing.T) {
 
 	// Set balance for account
 	balance := uint64(24)
-	newAcc.Balance = balance
+	newAcc.Balance = binary.NewUint256(balance)
 
 	// Set storage for account
 	err = cache.SetStorage(newAcc.Address, word("God save"), []byte("the queen!"))
@@ -246,7 +246,7 @@ func TestStateCache_Sync(t *testing.T) {
 	//Confirm changes to account balance in cache
 	newAccOut, err := cache.GetAccount(newAcc.Address)
 	require.NoError(t, err)
-	assert.Equal(t, balance, newAccOut.Balance)
+	assert.Equal(t, binary.NewUint256(balance), newAccOut.Balance)
 
 	//Confirm changes to account storage in cache
 	newAccStorage, err := cache.GetStorage(newAcc.Address, word("God save"))
@@ -260,7 +260,7 @@ func TestStateCache_Sync(t *testing.T) {
 	//Confirm changes to account balance synced correctly to backend
 	newAccOut, err = backend.GetAccount(newAcc.Address)
 	require.NoError(t, err)
-	assert.Equal(t, balance, newAccOut.Balance)
+	assert.Equal(t, binary.NewUint256(balance), newAccOut.Balance)
 
 	//Confirm changes to account storage synced correctly to backend
 	newAccStorage, err = cache.GetStorage(newAcc.Address, word("God save"))

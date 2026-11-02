@@ -58,7 +58,7 @@ func validatorMap(names ...string) map[string]*validator.Validator {
 	validators := make(map[string]*validator.Validator, len(names))
 	for _, name := range names {
 		acc := accountFromName(name)
-		validators[name] = validator.FromAccount(acc, acc.Balance)
+		validators[name] = validator.FromAccount(acc, genesisAmount(acc.Balance))
 	}
 	return validators
 }
@@ -66,7 +66,9 @@ func validatorMap(names ...string) map[string]*validator.Validator {
 func accountFromName(name string) *acm.Account {
 	ca := acm.NewAccountFromSecret(name)
 	for _, c := range name {
-		ca.Balance += uint64(c)
+		if err := ca.AddToBalance(uint64(c)); err != nil {
+			panic(err)
+		}
 	}
 	ca.Permissions = permission.AllAccountPermissions.Clone()
 	return ca

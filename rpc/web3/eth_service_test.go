@@ -119,7 +119,7 @@ func TestWeb3Service(t *testing.T) {
 		receivee := genesisAccounts[2].GetPublicKey().GetAddress()
 		acc, err := kern.State.GetAccount(receivee)
 		require.NoError(t, err)
-		before := acc.GetBalance()
+		before, _ := acc.Balance.Uint64()
 
 		t.Run("EthSendRawTransaction", func(t *testing.T) {
 			txEnv := txs.Enclose(chainID, &payload.CallTx{

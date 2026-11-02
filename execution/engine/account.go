@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"github.com/hyperledger/burrow/binary"
 	"math/big"
 
 	"github.com/hyperledger/burrow/acm"
@@ -117,29 +118,31 @@ func InitWASMCode(st acmstate.ReaderWriter, address crypto.Address, code []byte)
 	return st.UpdateAccount(acc)
 }
 
-// TODO: consider pushing big.Int usage all the way to account balance
+// Transfer moves amount, an unsigned value of up to 256 bits, from one account
+// to another.
 func Transfer(st acmstate.ReaderWriter, from, to crypto.Address, amount *big.Int) error {
-	if !amount.IsInt64() {
-		return errors.Errorf(errors.Codes.IntegerOverflow, "transfer amount %v overflows int64", amount)
-	}
 	if amount.Sign() == 0 {
 		return nil
+	}
+	value, err := binary.Uint256FromBig(amount)
+	if err != nil {
+		return errors.Errorf(errors.Codes.IntegerOverflow, "transfer amount: %v", err)
 	}
 	acc, err := MustAccount(st, from)
 	if err != nil {
 		return err
 	}
-	if new(big.Int).SetUint64(acc.Balance).Cmp(amount) < 0 {
+	if acc.Balance.Cmp(value) < 0 {
 		return errors.Codes.InsufficientBalance
 	}
 	err = UpdateAccount(st, from, func(account *acm.Account) error {
-		return account.SubtractFromBalance(amount.Uint64())
+		return account.Debit(value)
 	})
 	if err != nil {
 		return err
 	}
 	return UpdateAccount(st, to, func(account *acm.Account) error {
-		return account.AddToBalance(amount.Uint64())
+		return account.Credit(value)
 	})
 }
 

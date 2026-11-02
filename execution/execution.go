@@ -305,7 +305,7 @@ func (exe *executor) validateInputsAndStorePublicKeys(txEnv *txs.Envelope) error
 				"so expected input to have sequence %d", in, in.Sequence, acc.Sequence, acc.Sequence+1)
 		}
 		// Check amount
-		if txEnv.Tx.Type() != payload.TypeUnbond && acc.Balance < in.Amount {
+		if txEnv.Tx.Type() != payload.TypeUnbond && acc.Balance.Cmp(binary.NewUint256(in.Amount)) < 0 {
 			return errors.Codes.InsufficientFunds
 		}
 		// Check for Input permission

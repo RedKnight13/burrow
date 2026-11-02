@@ -698,7 +698,10 @@ func (c *Contract) execute(st engine.State, params engine.CallParams) ([]byte, e
 			}
 
 			code := errors.GetCode(err)
-			if code == errors.Codes.None || code == errors.Codes.ExecutionReverted {
+			// Reaching the call depth limit fails only this call, as on Ethereum: the
+			// caller gets 0 and continues.
+			if code == errors.Codes.None || code == errors.Codes.ExecutionReverted ||
+				code == errors.Codes.CallStackOverflow {
 				memory.Write(retOffset, RightPadBytes(returnData, int(retSize)))
 			} else {
 				maybe.PushError(err)

@@ -1277,11 +1277,15 @@ func TestEVM(t *testing.T) {
 		require.Error(t, err)
 		callError := txe.CallError()
 		require.Error(t, callError)
-		require.Equal(t, errors.Codes.CallStackOverflow, errors.GetCode(callError))
+		// As on Ethereum, the call at the depth limit fails only itself and
+		// returns false; the contract's require then reverts each frame.
+		require.Equal(t, errors.Codes.ExecutionReverted, errors.GetCode(callError))
 		// Errors are post-order so first is deepest
 		require.True(t, len(callError.NestedErrors) > 0)
+		// The deepest recorded error is the revert of the frame at the depth
+		// limit, whose own call was refused.
 		deepestErr := callError.NestedErrors[0]
-		require.Equal(t, errors.Codes.CallStackOverflow, errors.GetCode(deepestErr))
+		require.Equal(t, errors.Codes.ExecutionReverted, errors.GetCode(deepestErr))
 		assert.Equal(t, options.CallStackMaxDepth, deepestErr.StackDepth)
 		assert.Equal(t, account2, deepestErr.Callee)
 		assert.Equal(t, account1, deepestErr.Caller)

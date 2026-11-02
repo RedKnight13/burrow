@@ -142,7 +142,7 @@ func TestRunWithCallsHookBeforeBurrow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cases[0].RunWith(func() { order = append(order, "hook") })
+	cases[0].RunWith(func() { order = append(order, "hook") }, nil)
 	if strings.Join(order, ",") != "hook,execute" {
 		t.Fatalf("order = %v", order)
 	}

@@ -116,7 +116,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	scoreboard := ethtest.Scoreboard(results, lock["release"], lock["sha256"])
+	failed := errs > 0
+	if *write || *check {
+		failed = !validRun(*fixtures, p, lock, results, stdout, stderr) || failed
+	}
 	if *write {
+		if failed {
+			fmt.Fprintln(stderr, "not writing the scoreboard or the passing list: this run is not valid")
+			return 1
+		}
 		if err := os.WriteFile(p.scoreboard, scoreboard, 0o644); err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
@@ -126,10 +134,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 	}
-
-	failed := errs > 0
 	if *check {
-		failed = checkAll(*fixtures, p, lock, results, scoreboard, stdout, stderr) || failed
+		committed, err := os.ReadFile(p.scoreboard)
+		switch {
+		case err != nil:
+			failed = true
+			fmt.Fprintf(stderr, "check failed: %v\n", err)
+		case !bytes.Equal(committed, scoreboard):
+			failed = true
+			fmt.Fprintf(stderr, "check failed: %s differs from this run; regenerate it with -write\n", p.scoreboard)
+		}
 	}
 	if failed {
 		return 1
@@ -137,11 +151,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// checkAll runs every -check condition and reports each failure on its own line.
-func checkAll(fixtures string, p paths, lock map[string]string, results []ethtest.Result, scoreboard []byte, stdout, stderr io.Writer) bool {
-	failed := false
+// validRun checks that a full run can be trusted: the genesis self-check
+// passes, the case count matches the lock, and no case on the passing list
+// failed. -write requires it so the ratchet can never be lowered by a run;
+// lowering it means editing the passing list by hand in a reviewed change.
+// Each failure is reported on its own line.
+func validRun(fixtures string, p paths, lock map[string]string, results []ethtest.Result, stdout, stderr io.Writer) bool {
+	ok := true
 	fail := func(format string, args ...interface{}) {
-		failed = true
+		ok = false
 		fmt.Fprintf(stderr, "check failed: "+format+"\n", args...)
 	}
 
@@ -169,14 +187,7 @@ func checkAll(fixtures string, p paths, lock map[string]string, results []ethtes
 	for _, id := range ethtest.Regressions(prev, results) {
 		fail("regression: %s no longer passes", id)
 	}
-
-	committed, err := os.ReadFile(p.scoreboard)
-	if err != nil {
-		fail("%v", err)
-	} else if !bytes.Equal(committed, scoreboard) {
-		fail("%s differs from this run; regenerate it with -write", p.scoreboard)
-	}
-	return failed
+	return ok
 }
 
 func runAll(stateRoot string, filter *regexp.Regexp, timeout time.Duration, memLimit uint64, parallel int) ([]ethtest.Result, error) {

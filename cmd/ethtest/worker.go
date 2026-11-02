@@ -42,7 +42,7 @@ func watchMemory(limit uint64, stderr io.Writer) {
 
 // worker runs the cases of one file after the given ID, in ID order, and
 // reports each on stdout as "start\tID", then "exec\tID" as Burrow's EVM is
-// entered, then "result\tID\tstatus\treason".
+// entered and "done\tID" as it returns, then "result\tID\tstatus\treason".
 // Args: stateRoot path afterID filter; afterID and filter may be empty.
 func worker(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 4 {
@@ -76,6 +76,9 @@ func worker(args []string, stdout, stderr io.Writer) int {
 		id := c.ID
 		r := c.RunWith(func() {
 			fmt.Fprintf(w, "exec\t%s\n", id)
+			w.Flush()
+		}, func() {
+			fmt.Fprintf(w, "done\t%s\n", id)
 			w.Flush()
 		})
 		fmt.Fprintf(w, "result\t%s\t%s\t%s\n", r.ID, r.Status, oneLine(r.Reason))
@@ -146,6 +149,8 @@ func runFileIsolated(self, stateRoot, path, filter string, timeout time.Duration
 					timer = time.After(timeout)
 				case fields[0] == "exec" && len(fields) == 2 && fields[1] == current:
 					inBurrow = true
+				case fields[0] == "done" && len(fields) == 2 && fields[1] == current:
+					inBurrow = false
 				case fields[0] == "result" && len(fields) == 4:
 					results = append(results, ethtest.Result{
 						ID: fields[1], Fork: forkOf(fields[1]), Status: parseStatus(fields[2]), Reason: fields[3],

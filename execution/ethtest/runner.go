@@ -68,15 +68,16 @@ var execute = func(c callInput) error {
 
 // RunCase runs post[fork][i] of t.
 func RunCase(id string, t fixture.StateTest, fork string, i int) Result {
-	res, _ := runCase(id, t, fork, i, nil)
+	res, _ := runCase(id, t, fork, i, nil, nil)
 	return res
 }
 
 // runCase also returns the post-execution state (nil when Burrow was not run),
-// for diffing. onExecute, if set, is called just before Burrow's EVM runs.
+// for diffing. onEnter and onLeave, if set, are called just before Burrow's
+// EVM starts and just after it returns.
 // A panic inside the EVM is a Burrow defect ("crash"); any other panic is a
 // harness bug (Error).
-func runCase(id string, t fixture.StateTest, fork string, i int, onExecute func()) (res Result, st *acmstate.MemoryState) {
+func runCase(id string, t fixture.StateTest, fork string, i int, onEnter, onLeave func()) (res Result, st *acmstate.MemoryState) {
 	res = Result{ID: id, Fork: fork}
 	defer func() {
 		if r := recover(); r != nil {
@@ -147,8 +148,8 @@ func runCase(id string, t fixture.StateTest, fork string, i int, onExecute func(
 
 	sink := &logSink{}
 	st = loaded
-	if onExecute != nil {
-		onExecute()
+	if onEnter != nil {
+		onEnter()
 	}
 	crash := guarded(callInput{
 		state: st,
@@ -167,6 +168,9 @@ func runCase(id string, t fixture.StateTest, fork string, i int, onExecute func(
 		},
 		code: callee.EVMCode,
 	})
+	if onLeave != nil {
+		onLeave()
+	}
 	if crash != "" {
 		return fail(crash)
 	}
@@ -241,12 +245,13 @@ type Case struct {
 }
 
 func (c Case) Run() Result {
-	return c.RunWith(nil)
+	return c.RunWith(nil, nil)
 }
 
-// RunWith runs the case, calling onExecute just before Burrow's EVM starts.
-func (c Case) RunWith(onExecute func()) Result {
-	res, _ := runCase(c.ID, c.Test, c.Fork, c.Index, onExecute)
+// RunWith runs the case, calling onEnter just before Burrow's EVM starts and
+// onLeave just after it returns. Either may be nil.
+func (c Case) RunWith(onEnter, onLeave func()) Result {
+	res, _ := runCase(c.ID, c.Test, c.Fork, c.Index, onEnter, onLeave)
 	return res
 }
 

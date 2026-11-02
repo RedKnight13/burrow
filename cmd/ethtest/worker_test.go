@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -16,13 +18,26 @@ import (
 	"github.com/hyperledger/burrow/execution/ethtest/fixture"
 )
 
-// TestMain lets the test binary act as the worker child process.
+// TestMain lets the test binary act as the worker child process. With
+// fakeWorkerEnv set it instead prints those lines (separated by "|") and exits 2,
+// to simulate a worker dying at a chosen point of the protocol.
 func TestMain(m *testing.M) {
+	if script := os.Getenv(fakeWorkerEnv); script != "" && os.Getenv(workerEnv) == "1" {
+		if len(os.Args) > 3 && os.Args[3] != "" {
+			os.Exit(0) // resumed after the case: nothing left to run
+		}
+		for _, line := range strings.Split(script, "|") {
+			fmt.Println(line)
+		}
+		os.Exit(2)
+	}
 	if os.Getenv(workerEnv) == "1" {
 		os.Exit(worker(os.Args[1:], os.Stdout, os.Stderr))
 	}
 	os.Exit(m.Run())
 }
+
+const fakeWorkerEnv = "ETHTEST_FAKE_WORKER"
 
 const (
 	contract = "0x1000000000000000000000000000000000000000"
@@ -60,6 +75,17 @@ func stateTest(t *testing.T, code, gas string) map[string]interface{} {
 	}
 }
 
+// writeGenesis adds one blockchain fixture whose empty pre-state matches its
+// genesis root, so the genesis self-check has something to verify.
+func writeGenesis(t *testing.T, fixtures string) {
+	t.Helper()
+	writeJSON(t, filepath.Join(fixtures, "blockchain_tests", "g.json"), map[string]interface{}{
+		"t": map[string]interface{}{"network": "Paris", "pre": map[string]interface{}{},
+			"genesisBlockHeader": map[string]string{
+				"stateRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"}},
+	})
+}
+
 func writeJSON(t *testing.T, path string, v interface{}) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -83,11 +109,15 @@ func TestRunTimesOutLoopAndContinues(t *testing.T) {
 		"a_loop": stateTest(t, "0x5b600056", "0x7fffffffffffffff"),
 		"b_stop": stateTest(t, "0x00", "0x0186a0"),
 	})
+	writeGenesis(t, fixtures)
 	lock := filepath.Join(dir, "fixtures.lock")
 	if err := os.WriteFile(lock, []byte("release=test\nsha256=00\nstate_cases=2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	scoreboard, passing := filepath.Join(dir, "scoreboard.md"), filepath.Join(dir, "passing.txt")
+	if err := os.WriteFile(passing, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	var out, errOut bytes.Buffer
 	code := run([]string{"-fixtures", fixtures, "-lock", lock, "-scoreboard", scoreboard, "-passing", passing,
@@ -108,17 +138,13 @@ func TestRunTimesOutLoopAndContinues(t *testing.T) {
 		t.Fatalf("scoreboard:\n%s", board)
 	}
 
-	// The committed files now match, so -check passes apart from the genesis
-	// self-check, which needs blockchain fixtures this tree does not have.
+	// The committed files now match, so -check passes.
 	out.Reset()
 	errOut.Reset()
 	code = run([]string{"-fixtures", fixtures, "-lock", lock, "-scoreboard", scoreboard, "-passing", passing,
 		"-timeout", "1s", "-check"}, &out, &errOut)
-	if code != 1 || !strings.Contains(errOut.String(), "genesis root self-check") {
+	if code != 0 {
 		t.Fatalf("-check exit %d, stderr %q", code, errOut.String())
-	}
-	if strings.Contains(errOut.String(), "regression") || strings.Contains(errOut.String(), "differs") {
-		t.Fatalf("unexpected check failure: %q", errOut.String())
 	}
 }
 
@@ -229,5 +255,127 @@ func TestRunMemoryCeilingIsCrash(t *testing.T) {
 	if len(lines) != 2 || lines[0] != "f.json::a_hog::Cancun::0\tfail\tcrash: fatal error: worker memory limit exceeded" ||
 		lines[1] != "f.json::b_stop::Cancun::0\tpass\t" {
 		t.Fatalf("results:\n%s", got)
+	}
+}
+
+// writeSetup builds a two-case fixture tree (one passing, one failing on its
+// root), a lock, and empty scoreboard and passing files.
+func writeSetup(t *testing.T, stateCases int) (fixtures, lock, scoreboard, passing string) {
+	t.Helper()
+	dir := t.TempDir()
+	fixtures = filepath.Join(dir, "fixtures")
+	failing := stateTest(t, "0x00", "0x0186a0")
+	failing["post"].(map[string]interface{})["Cancun"].([]interface{})[0].(map[string]interface{})["hash"] = "0x" + strings.Repeat("00", 32)
+	writeJSON(t, filepath.Join(fixtures, "state_tests", "f.json"), map[string]interface{}{
+		"b_stop": stateTest(t, "0x00", "0x0186a0"),
+		"c_fail": failing,
+	})
+	writeGenesis(t, fixtures)
+	lock = filepath.Join(dir, "fixtures.lock")
+	if err := os.WriteFile(lock, []byte(fmt.Sprintf("release=test\nsha256=00\nstate_cases=%d\n", stateCases)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	scoreboard, passing = filepath.Join(dir, "scoreboard.md"), filepath.Join(dir, "passing.txt")
+	if err := os.WriteFile(scoreboard, []byte("unchanged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(passing, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return fixtures, lock, scoreboard, passing
+}
+
+// assertUnchanged checks the scoreboard still holds its placeholder and the
+// passing list is still empty.
+func assertUnchanged(t *testing.T, scoreboard, passing string) {
+	t.Helper()
+	if got, _ := os.ReadFile(scoreboard); string(got) != "unchanged\n" {
+		t.Fatalf("scoreboard was rewritten: %q", got)
+	}
+	if got, _ := os.ReadFile(passing); len(got) != 0 {
+		t.Fatalf("passing list was rewritten: %q", got)
+	}
+}
+
+func TestWriteRefusesWrongCaseCount(t *testing.T) {
+	fixtures, lock, scoreboard, passing := writeSetup(t, 5)
+	var out, errOut bytes.Buffer
+	code := run([]string{"-fixtures", fixtures, "-lock", lock, "-scoreboard", scoreboard, "-passing", passing, "-write"}, &out, &errOut)
+	if code != 1 || !strings.Contains(errOut.String(), "state_cases=5") {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+	assertUnchanged(t, scoreboard, passing)
+}
+
+func TestWriteRefusesToLowerTheRatchet(t *testing.T) {
+	fixtures, lock, scoreboard, passing := writeSetup(t, 2)
+	if err := os.WriteFile(passing, []byte("f.json::c_fail::Cancun::0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	code := run([]string{"-fixtures", fixtures, "-lock", lock, "-scoreboard", scoreboard, "-passing", passing, "-write"}, &out, &errOut)
+	if code != 1 || !strings.Contains(errOut.String(), "regression: f.json::c_fail::Cancun::0") {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+	if got, _ := os.ReadFile(passing); string(got) != "f.json::c_fail::Cancun::0\n" {
+		t.Fatalf("passing list was lowered: %q", got)
+	}
+	if got, _ := os.ReadFile(scoreboard); string(got) != "unchanged\n" {
+		t.Fatalf("scoreboard was rewritten: %q", got)
+	}
+}
+
+func TestWriteRefusesWithoutGenesisCheck(t *testing.T) {
+	fixtures, lock, scoreboard, passing := writeSetup(t, 2)
+	if err := os.RemoveAll(filepath.Join(fixtures, "blockchain_tests")); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	code := run([]string{"-fixtures", fixtures, "-lock", lock, "-scoreboard", scoreboard, "-passing", passing, "-write"}, &out, &errOut)
+	if code != 1 || !strings.Contains(errOut.String(), "genesis root self-check") {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+	assertUnchanged(t, scoreboard, passing)
+}
+
+func TestWriteSucceedsOnACleanRun(t *testing.T) {
+	fixtures, lock, scoreboard, passing := writeSetup(t, 2)
+	var out, errOut bytes.Buffer
+	code := run([]string{"-fixtures", fixtures, "-lock", lock, "-scoreboard", scoreboard, "-passing", passing, "-write"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+	if got, _ := os.ReadFile(passing); string(got) != "f.json::b_stop::Cancun::0\n" {
+		t.Fatalf("passing = %q", got)
+	}
+}
+
+// TestCrashAfterBurrowReturnsIsHarnessError: a worker that dies after Burrow
+// has returned died in harness code, so the case is an error, not a Burrow crash.
+func TestCrashAfterBurrowReturnsIsHarnessError(t *testing.T) {
+	id := "f.json::x::Cancun::0"
+	tests := []struct {
+		name, script string
+		status       ethtest.Status
+	}{
+		{"inside Burrow", "start\t" + id + "|exec\t" + id, ethtest.Fail},
+		{"after Burrow returned", "start\t" + id + "|exec\t" + id + "|done\t" + id, ethtest.Error},
+		{"before Burrow", "start\t" + id, ethtest.Error},
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(fakeWorkerEnv, tt.script)
+			results, err := runFileIsolated(self, "root", "f.json", "^"+regexp.QuoteMeta(id)+"$", 10*time.Second, 1<<30)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(results) == 0 || results[0].ID != id || results[0].Status != tt.status {
+				t.Fatalf("results = %+v, want first %s %v", results, id, tt.status)
+			}
+		})
 	}
 }

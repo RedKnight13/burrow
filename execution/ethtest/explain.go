@@ -24,7 +24,7 @@ type flatAccount struct {
 // Explain runs one case and describes how Burrow's post-state differs from the
 // fixture's expected post-state, account by account.
 func Explain(id string, t fixture.StateTest, fork string, i int) string {
-	res, st := runCase(id, t, fork, i, nil)
+	res, st := runCase(id, t, fork, i, nil, nil)
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: %s %s\n", id, res.Status, res.Reason)
 	if st == nil {

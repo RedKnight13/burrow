@@ -126,7 +126,10 @@ func Apply(raw []byte, st acmstate.Reader, env Env) Result {
 
 	// Charge the full gas allowance up front and bump the nonce. These stand
 	// even if execution fails.
-	acc, _ := rec.GetAccount(sender)
+	acc, err := senderAccount(rec, sender)
+	if err != nil {
+		return invalid(ReasonUnknownSender, err)
+	}
 	upfront := new(big.Int).Mul(new(big.Int).SetUint64(tx.Gas), tx.GasPrice)
 	acc.Balance -= upfront.Uint64()
 	acc.Sequence++
@@ -165,23 +168,11 @@ func validate(rec *overlay, tx *Transaction, sender crypto.Address, env Env) (Re
 		res.Sender = sender
 		return res, false
 	}
-	acc, err := rec.GetAccount(sender)
+	acc, err := senderAccount(rec, sender)
 	if err != nil {
 		return fail(ReasonUnknownSender, "reading sender: %v", err)
 	}
-	if acc == nil {
-		return fail(ReasonUnknownSender, "sender %v has no account", sender)
-	}
-	needed := []permission.PermFlag{permission.Input, permission.Call}
-	if tx.To == nil {
-		needed[1] = permission.CreateContract
-	}
-	for _, perm := range needed {
-		ok, err := engine.HasPermission(rec, sender, perm)
-		if err != nil || !ok {
-			return fail(ReasonPermission, "sender %v lacks %v permission", sender, perm)
-		}
-	}
+	// Ethereum's validity rules first, then Burrow's permissions.
 	switch {
 	case acc.Sequence == math.MaxUint64:
 		return fail(ReasonNonceMax, "sender nonce is at its maximum")
@@ -199,12 +190,45 @@ func validate(rec *overlay, tx *Transaction, sender crypto.Address, env Env) (Re
 	if cost.Cmp(new(big.Int).SetUint64(acc.Balance)) > 0 {
 		return fail(ReasonInsufficientFunds, "cost %v exceeds balance %d", cost, acc.Balance)
 	}
+	needed := []permission.PermFlag{permission.Input, permission.Call}
+	if tx.To == nil {
+		needed[1] = permission.CreateContract
+	}
+	for _, perm := range needed {
+		if !hasPermission(rec, acc, perm) {
+			return fail(ReasonPermission, "sender %v lacks %v permission", sender, perm)
+		}
+	}
 	if !tx.Value.IsInt64() {
 		res := Result{Status: Unsupported, Reason: ReasonValueTooLarge, Sender: sender,
 			Err: fmt.Errorf("value %v exceeds Burrow's int64 transfer limit", tx.Value)}
 		return res, false
 	}
 	return Result{}, true
+}
+
+// senderAccount returns the sender's account, or, as on Ethereum, an empty one
+// (nonce 0, balance 0) when it does not exist.
+func senderAccount(rec *overlay, sender crypto.Address) (*acm.Account, error) {
+	acc, err := rec.GetAccount(sender)
+	if err != nil {
+		return nil, err
+	}
+	if acc == nil {
+		acc = &acm.Account{Address: sender}
+	}
+	return acc, nil
+}
+
+// hasPermission composes the account's own permissions with the chain's global
+// permissions. A permission set in neither is denied.
+func hasPermission(st acmstate.Reader, acc *acm.Account, perm permission.PermFlag) bool {
+	global, err := acmstate.GlobalAccountPermissions(st)
+	if err != nil {
+		return false
+	}
+	ok, err := acc.Permissions.Base.Compose(global.Base).Get(perm)
+	return err == nil && ok
 }
 
 func intrinsicGas(tx *Transaction) uint64 {

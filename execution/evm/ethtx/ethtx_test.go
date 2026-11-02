@@ -294,3 +294,48 @@ func TestFailedCreateLeavesNoAccount(t *testing.T) {
 		}
 	}
 }
+
+// TestEthereumChecksComeBeforePermissions: Ethereum's validity rules are
+// checked first, then Burrow's permissions, which are never skipped.
+func TestEthereumChecksComeBeforePermissions(t *testing.T) {
+	noPerms := permission.NewAccountPermissions()
+	raw := sign(t, unsigned{nonce: 3, gasPrice: 1, gas: 50000, to: &contract}, testChainID)
+	res := Apply(raw, newState(t, []byte{0x00}, noPerms), env())
+	if res.Status != Invalid || res.Reason != ReasonNonceTooHigh {
+		t.Fatalf("got %v %v, want invalid nonce too high", res.Status, res.Reason)
+	}
+}
+
+// TestMissingSenderIsAnEmptyAccount: as on Ethereum, a sender with no account
+// has nonce 0 and balance 0.
+func TestMissingSenderIsAnEmptyAccount(t *testing.T) {
+	st := newState(t, []byte{0x00}, permission.AllAccountPermissions)
+	if err := st.RemoveAccount(testSender); err != nil {
+		t.Fatal(err)
+	}
+	paying := sign(t, unsigned{gasPrice: 1, gas: 50000, to: &contract}, testChainID)
+	if res := Apply(paying, st, env()); res.Status != Invalid || res.Reason != ReasonInsufficientFunds {
+		t.Fatalf("paying tx: got %v %v, want invalid insufficient funds", res.Status, res.Reason)
+	}
+
+	free := sign(t, unsigned{gasPrice: 0, gas: 50000, to: &contract}, testChainID)
+	if res := Apply(free, st, env()); res.Status != Invalid || res.Reason != ReasonPermission {
+		t.Fatalf("free tx, no global permissions: got %v %v, want invalid permission", res.Status, res.Reason)
+	}
+
+	global := account(t, st, acm.GlobalPermissionsAddress)
+	global.Permissions = permission.NewAccountPermissions(permission.Input, permission.Call)
+	if err := st.UpdateAccount(global); err != nil {
+		t.Fatal(err)
+	}
+	res := Apply(free, st, env())
+	if res.Status != Success {
+		t.Fatalf("free tx, global Input+Call: got %v %v: %v", res.Status, res.Reason, res.Err)
+	}
+	if err := res.RWSet.ApplyTo(st); err != nil {
+		t.Fatal(err)
+	}
+	if acc := account(t, st, testSender); acc == nil || acc.Sequence != 1 {
+		t.Fatalf("sender after = %+v, want nonce 1", acc)
+	}
+}

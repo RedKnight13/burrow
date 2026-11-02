@@ -17,8 +17,9 @@ import (
 )
 
 var (
-	errTyped     = errors.New("typed (EIP-2718) transactions are not supported yet")
-	errChainID   = errors.New("signature is for a different chain ID")
+	errTyped = errors.New("typed (EIP-2718) transactions are not supported yet")
+	// errChainID is for typed transactions, which carry a chain ID field.
+	errChainID   = errors.New("transaction is for a different chain ID")
 	secp256k1N   = btcec.S256().N
 	secp256k1Mid = new(big.Int).Rsh(secp256k1N, 1)
 )
@@ -101,7 +102,9 @@ func (tx *Transaction) Sender(chainID *big.Int) (crypto.Address, error) {
 	case v.Cmp(big.NewInt(35)) >= 0:
 		txChain := new(big.Int).Rsh(new(big.Int).Sub(v, big.NewInt(35)), 1)
 		if txChain.Cmp(chainID) != 0 {
-			return crypto.ZeroAddress, errChainID
+			// For a legacy transaction a v that does not encode this chain is an
+			// invalid signature, as in Ethereum's execution specs.
+			return crypto.ZeroAddress, fmt.Errorf("signature v %v does not encode chain %v", v, chainID)
 		}
 		recID = int64(new(big.Int).Sub(v, big.NewInt(35)).Bit(0))
 		hash = tx.signingHash(chainID)

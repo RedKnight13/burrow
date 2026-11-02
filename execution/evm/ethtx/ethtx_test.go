@@ -112,11 +112,17 @@ func TestSenderRecovery(t *testing.T) {
 	}
 }
 
-func TestWrongChainIDIsInvalid(t *testing.T) {
-	raw := sign(t, unsigned{gasPrice: 1, gas: 21000, to: &contract}, big.NewInt(5))
-	res := Apply(raw, newState(t, []byte{0x00}, permission.AllAccountPermissions), env())
-	if res.Status != Invalid || res.Reason != ReasonChainID {
-		t.Fatalf("got %v %v", res.Status, res.Reason)
+// TestWrongChainIDIsInvalidSignature: as in Ethereum's execution specs, a
+// legacy transaction whose v does not encode this chain is an invalid
+// signature. (A chain ID mismatch is reported only for typed transactions,
+// which carry the chain ID as a field.)
+func TestWrongChainIDIsInvalidSignature(t *testing.T) {
+	for _, chainID := range []*big.Int{big.NewInt(5), new(big.Int).Lsh(big.NewInt(1), 70)} {
+		raw := sign(t, unsigned{gasPrice: 1, gas: 21000, to: &contract}, chainID)
+		res := Apply(raw, newState(t, []byte{0x00}, permission.AllAccountPermissions), env())
+		if res.Status != Invalid || res.Reason != ReasonSignature {
+			t.Fatalf("chain %v: got %v %v, want invalid signature", chainID, res.Status, res.Reason)
+		}
 	}
 }
 

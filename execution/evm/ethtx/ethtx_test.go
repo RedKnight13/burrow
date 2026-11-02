@@ -112,16 +112,26 @@ func TestSenderRecovery(t *testing.T) {
 	}
 }
 
-// TestWrongChainIDIsInvalidSignature: as in Ethereum's execution specs, a
-// legacy transaction whose v does not encode this chain is an invalid
-// signature. (A chain ID mismatch is reported only for typed transactions,
-// which carry the chain ID as a field.)
-func TestWrongChainIDIsInvalidSignature(t *testing.T) {
-	for _, chainID := range []*big.Int{big.NewInt(5), new(big.Int).Lsh(big.NewInt(1), 70)} {
-		raw := sign(t, unsigned{gasPrice: 1, gas: 21000, to: &contract}, chainID)
+// TestWrongChainID follows Ethereum's execution specs for legacy
+// transactions: a v that encodes a different 64-bit chain ID is a chain ID
+// mismatch, and one that encodes a chain ID above 64 bits is an invalid
+// signature.
+func TestWrongChainID(t *testing.T) {
+	maxUint64 := new(big.Int).SetUint64(^uint64(0))
+	tests := []struct {
+		chainID *big.Int
+		want    Reason
+	}{
+		{big.NewInt(5), ReasonChainID},
+		{maxUint64, ReasonChainID},
+		{new(big.Int).Add(maxUint64, big.NewInt(1)), ReasonSignature},
+		{new(big.Int).Lsh(big.NewInt(1), 70), ReasonSignature},
+	}
+	for _, tt := range tests {
+		raw := sign(t, unsigned{gasPrice: 1, gas: 21000, to: &contract}, tt.chainID)
 		res := Apply(raw, newState(t, []byte{0x00}, permission.AllAccountPermissions), env())
-		if res.Status != Invalid || res.Reason != ReasonSignature {
-			t.Fatalf("chain %v: got %v %v, want invalid signature", chainID, res.Status, res.Reason)
+		if res.Status != Invalid || res.Reason != tt.want {
+			t.Fatalf("chain %v: got %v %v, want invalid %v", tt.chainID, res.Status, res.Reason, tt.want)
 		}
 	}
 }

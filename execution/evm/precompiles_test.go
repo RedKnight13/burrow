@@ -51,7 +51,8 @@ func TestECRecover(t *testing.T) {
 	spec, err := abi.ReadSpec(solidity.Abi_ECRecover)
 	require.NoError(t, err)
 	funcId := spec.Functions["recoverSigningAddress"].FunctionID
-	input := bc.MustSplice(funcId, digest, binary.Int64ToWord256(int64(sig[2*binary.Word256Bytes])), sig[:2*binary.Word256Bytes])
+	// SignCompact returns [27 + recovery id | r | s]; the contract takes v, r, s.
+	input := bc.MustSplice(funcId, digest, binary.Int64ToWord256(int64(sig[0])), sig[1:])
 
 	params := engine.CallParams{
 		Caller: caller.Address,

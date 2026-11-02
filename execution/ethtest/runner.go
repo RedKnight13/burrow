@@ -152,6 +152,11 @@ func runCase(id string, t fixture.StateTest, fork string, i int, onEnter, onLeav
 		return fail("logs")
 	}
 	res.Status = Pass
+	if post.ExpectException != "" {
+		// Burrow rejected a transaction Ethereum rejects. It is a pass, but
+		// not evidence that Burrow executes anything correctly.
+		res.Reason = "rejected"
+	}
 	return res, st
 }
 

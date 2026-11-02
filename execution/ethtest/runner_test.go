@@ -146,8 +146,8 @@ func TestRunCaseExpectedException(t *testing.T) {
 		status Status
 		reason string
 	}{
-		{"matching reason", "TransactionException.INTRINSIC_GAS_TOO_LOW", Pass, ""},
-		{"one of several", "TransactionException.NONCE_IS_MAX|TransactionException.INTRINSIC_GAS_TOO_LOW", Pass, ""},
+		{"matching reason", "TransactionException.INTRINSIC_GAS_TOO_LOW", Pass, "rejected"},
+		{"one of several", "TransactionException.NONCE_IS_MAX|TransactionException.INTRINSIC_GAS_TOO_LOW", Pass, "rejected"},
 		{"different reason", "TransactionException.NONCE_MISMATCH_TOO_HIGH", Fail, "exception: got intrinsic gas too low"},
 		{"rule Burrow lacks", "TransactionException.SENDER_NOT_EOA", Fail, "unsupported: exception SENDER_NOT_EOA"},
 	}

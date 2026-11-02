@@ -166,8 +166,8 @@ func TestRunTimesOutLoopAndContinues(t *testing.T) {
 		t.Fatalf("passing = %q", got)
 	}
 	board, _ := os.ReadFile(scoreboard)
-	// fork | total | pass | fail | unsupported | error | pass %
-	if !strings.Contains(string(board), "| Cancun | 2 | 1 | 1 | 0 | 0 | 50.0% |") {
+	// fork | total | pass | of which rejected | fail | unsupported | error | pass %
+	if !strings.Contains(string(board), "| Cancun | 2 | 1 | 0 | 1 | 0 | 0 | 50.0% |") {
 		t.Fatalf("scoreboard:\n%s", board)
 	}
 

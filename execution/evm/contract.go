@@ -632,7 +632,15 @@ func (c *Contract) execute(st engine.State, params engine.CallParams) ([]byte, e
 			if maybe.PushError(err) {
 				continue
 			}
-			maybe.PushError(engine.CreateAccount(childCallFrame, newAccountAddress))
+			if err := engine.CreateAccount(childCallFrame, newAccountAddress); err != nil {
+				if failsOnlyTheCall(errors.GetCode(err)) {
+					// An address collision fails only this CREATE, as on Ethereum.
+					stack.Push(Zero256)
+					break
+				}
+				maybe.PushError(err)
+				continue
+			}
 
 			// Run the input to get the contract code.
 			// NOTE: no need to copy 'input' as per Call contract.
@@ -705,13 +713,14 @@ func (c *Contract) execute(st engine.State, params engine.CallParams) ([]byte, e
 				stack.Push(One256)
 			}
 
-			code := errors.GetCode(err)
-			// Reaching the call depth limit fails only this call, as on Ethereum: the
-			// caller gets 0 and continues.
-			if code == errors.Codes.None || code == errors.Codes.ExecutionReverted ||
-				code == errors.Codes.CallStackOverflow {
+			switch code := errors.GetCode(err); {
+			case code == errors.Codes.None || code == errors.Codes.ExecutionReverted:
 				memory.Write(retOffset, RightPadBytes(returnData, int(retSize)))
-			} else {
+			case failsOnlyTheCall(code):
+				// An exceptional halt in the callee: as on Ethereum the caller gets
+				// 0, no return data, and continues.
+				returnData = nil
+			default:
 				maybe.PushError(err)
 			}
 
@@ -851,4 +860,29 @@ func callTypeFromOpCode(o OpCode) exec.CallType {
 	default:
 		return exec.CallTypeInvalid
 	}
+}
+
+// failsOnlyTheCall reports whether a callee error is an EVM exception, which
+// on Ethereum only makes the CALL or CREATE return 0. Other errors (permission
+// denials, Burrow state or internal errors) still abort the caller, keeping
+// Burrow's permission model strict.
+func failsOnlyTheCall(code *errors.Code) bool {
+	switch code {
+	case errors.Codes.InsufficientGas,
+		errors.Codes.InvalidJumpDest,
+		errors.Codes.MemoryOutOfBounds,
+		errors.Codes.CodeOutOfBounds,
+		errors.Codes.InputOutOfBounds,
+		errors.Codes.ReturnDataOutOfBounds,
+		errors.Codes.CallStackOverflow,
+		errors.Codes.DataStackOverflow,
+		errors.Codes.DataStackUnderflow,
+		errors.Codes.ExecutionAborted,
+		errors.Codes.InsufficientBalance,
+		errors.Codes.NativeFunction,
+		errors.Codes.DuplicateAddress,
+		errors.Codes.IntegerOverflow:
+		return true
+	}
+	return false
 }

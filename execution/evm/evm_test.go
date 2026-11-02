@@ -1403,6 +1403,12 @@ func TestEVM(t *testing.T) {
 
 		expModFunctionID := spec.Functions["expmod"].FunctionID
 
+		// The precompile reads its operands as unsigned 256-bit words (EIP-198),
+		// so a negative value here means its two's-complement word, 2^256 - |x|.
+		unsigned := func(x int64) *big.Int {
+			w := BigIntToWord256(big.NewInt(x))
+			return new(big.Int).SetBytes(w[:])
+		}
 		n := int64(10)
 		for base := -n; base < n; base++ {
 			for exp := -n; exp < n; exp++ {
@@ -1410,10 +1416,7 @@ func TestEVM(t *testing.T) {
 					b := big.NewInt(base)
 					e := big.NewInt(exp)
 					m := big.NewInt(mod)
-					v := new(big.Int).Exp(b, e, m)
-					if v == nil {
-						continue
-					}
+					v := new(big.Int).Exp(unsigned(base), unsigned(exp), m)
 
 					input := MustSplice(expModFunctionID, // expmod function
 						BigIntToWord256(b), BigIntToWord256(e), BigIntToWord256(m), // base^exp % mod
@@ -1424,8 +1427,8 @@ func TestEVM(t *testing.T) {
 
 					require.NoError(t, err)
 
-					require.Equal(t, One256, LeftPadWord256(out), "expected %d^%d mod %d == %d",
-						base, exp, mod, e)
+					require.Equal(t, One256, LeftPadWord256(out), "expected %d^%d mod %d == %d (operands unsigned)",
+						base, exp, mod, v)
 				}
 			}
 		}

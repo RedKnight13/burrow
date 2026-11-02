@@ -153,18 +153,29 @@ func identity(ctx Context) (output []byte, err error) {
 
 // expMod: function that implements the EIP 198 (https://github.com/ethereum/EIPs/blob/master/EIPS/eip-198.md with
 // a fixed gas requirement)
+// maxModexpLength bounds each of the base, exponent and modulus lengths, as
+// EIP-7823 does on Ethereum. Burrow's flat gas cost cannot bound the work or
+// memory of larger operands.
+const maxModexpLength = 1024
+
+// expMod computes base**exp % mod as specified by EIP-198. The input is three
+// 32-byte big-endian lengths followed by base, exponent and modulus, all
+// unsigned big-endian and right-padded with zeros when the input is short. The
+// output is the result left-padded to the modulus length; a zero modulus gives
+// zero.
 func expMod(ctx Context) (output []byte, err error) {
 	const errHeader = "expMod"
 
-	input, segments, err := cut(ctx.Input, binary.Word256Bytes, binary.Word256Bytes, binary.Word256Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %v", errHeader, err)
+	lengths := padRight(ctx.Input, 3*binary.Word256Bytes)
+	var lens [3]uint64
+	for i := range lens {
+		n := new(big.Int).SetBytes(lengths[i*binary.Word256Bytes : (i+1)*binary.Word256Bytes])
+		if !n.IsUint64() || n.Uint64() > maxModexpLength {
+			return nil, fmt.Errorf("%s: operand length %v exceeds %d bytes", errHeader, n, maxModexpLength)
+		}
+		lens[i] = n.Uint64()
 	}
-
-	// get the lengths of base, exp and mod
-	baseLength := getUint64(segments[0])
-	expLength := getUint64(segments[1])
-	modLength := getUint64(segments[2])
+	baseLength, expLength, modLength := lens[0], lens[1], lens[2]
 
 	// TODO: implement non-trivial gas schedule for this operation. Probably a parameterised version of the one
 	// described in EIP though that one seems like a bit of a complicated fudge
@@ -175,47 +186,30 @@ func expMod(ctx Context) (output []byte, err error) {
 		return nil, err
 	}
 
-	input, segments, err = cut(input, baseLength, expLength, modLength)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %v", errHeader, err)
+	var operands []byte
+	if len(ctx.Input) > 3*binary.Word256Bytes {
+		operands = ctx.Input[3*binary.Word256Bytes:]
 	}
+	operands = padRight(operands, int(baseLength+expLength+modLength))
+	base := new(big.Int).SetBytes(operands[:baseLength])
+	exp := new(big.Int).SetBytes(operands[baseLength : baseLength+expLength])
+	mod := new(big.Int).SetBytes(operands[baseLength+expLength : baseLength+expLength+modLength])
 
-	// get the values of base, exp and mod
-	base := getBigInt(segments[0], baseLength)
-	exp := getBigInt(segments[1], expLength)
-	mod := getBigInt(segments[2], modLength)
-
-	// handle mod 0
 	if mod.Sign() == 0 {
-		return binary.LeftPadBytes([]byte{}, int(modLength)), nil
+		return make([]byte, modLength), nil
 	}
-
-	// return base**exp % mod left padded
 	return binary.LeftPadBytes(new(big.Int).Exp(base, exp, mod).Bytes(), int(modLength)), nil
 }
 
-// Partition the head of input into segments for each length in lengths. The first return value is the unconsumed tail
-// of input and the seconds is the segments. Returns an error if input is of insufficient length to establish each segment.
-func cut(input []byte, lengths ...uint64) ([]byte, [][]byte, error) {
-	segments := make([][]byte, len(lengths))
-	for i, length := range lengths {
-		if uint64(len(input)) < length {
-			return nil, nil, fmt.Errorf("input is not long enough")
-		}
-		segments[i] = input[:length]
-		input = input[length:]
+// padRight returns b extended with zeros to at least n bytes, without
+// modifying b.
+func padRight(b []byte, n int) []byte {
+	if len(b) >= n {
+		return b
 	}
-	return input, segments, nil
-}
-
-func getBigInt(bs []byte, numBytes uint64) *big.Int {
-	bits := uint(numBytes) * 8
-	// Push bytes into big.Int and interpret as twos complement encoding with of bits width
-	return binary.FromTwosComplement(new(big.Int).SetBytes(bs), bits)
-}
-
-func getUint64(bs []byte) uint64 {
-	return binary.Uint64FromWord256(binary.LeftPadWord256(bs))
+	out := make([]byte, n)
+	copy(out, b)
+	return out
 }
 
 func wordsIn(numBytes uint64) uint64 {

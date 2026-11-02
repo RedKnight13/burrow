@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +22,23 @@ import (
 // gas schedule. Each fixture file therefore runs in a child process (this same
 // binary with workerEnv set) that the parent kills when a case overruns.
 const workerEnv = "ETHTEST_WORKER"
+
+// workerMemEnv carries the worker's heap ceiling in bytes.
+const workerMemEnv = "ETHTEST_WORKER_MEM"
+
+// watchMemory stops the worker when its heap passes limit bytes, so a case
+// that makes Burrow allocate without bound cannot exhaust the machine. The
+// parent records it as a crash.
+func watchMemory(limit uint64, stderr io.Writer) {
+	var m runtime.MemStats
+	for range time.Tick(20 * time.Millisecond) {
+		runtime.ReadMemStats(&m)
+		if m.HeapAlloc > limit {
+			fmt.Fprintln(stderr, "fatal error: worker memory limit exceeded")
+			os.Exit(3)
+		}
+	}
+}
 
 // worker runs the cases of one file after the given ID, in ID order, and
 // reports each on stdout as "start\tID", then "exec\tID" as Burrow's EVM is
@@ -38,6 +57,9 @@ func worker(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 2
 		}
+	}
+	if limit, err := strconv.ParseUint(os.Getenv(workerMemEnv), 10, 64); err == nil && limit > 0 {
+		go watchMemory(limit, stderr)
 	}
 	cases, err := ethtest.Cases(args[0], args[1])
 	if err != nil {
@@ -81,12 +103,12 @@ func parseStatus(s string) ethtest.Status {
 // Burrow's EVM, a case that runs longer than timeout is "fail: timeout" and a
 // worker that dies is "fail: crash: ...". Outside it, either is a harness
 // error. Either way the next worker resumes after that case.
-func runFileIsolated(self, stateRoot, path, filter string, timeout time.Duration) ([]ethtest.Result, error) {
+func runFileIsolated(self, stateRoot, path, filter string, timeout time.Duration, memLimit uint64) ([]ethtest.Result, error) {
 	var results []ethtest.Result
 	after := ""
 	for {
 		cmd := exec.Command(self, stateRoot, path, after, filter)
-		cmd.Env = append(os.Environ(), workerEnv+"=1")
+		cmd.Env = append(os.Environ(), workerEnv+"=1", fmt.Sprintf("%s=%d", workerMemEnv, memLimit))
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		out, err := cmd.StdoutPipe()

@@ -103,8 +103,8 @@ func TestRunTimesOutLoopAndContinues(t *testing.T) {
 		t.Fatalf("passing = %q", got)
 	}
 	board, _ := os.ReadFile(scoreboard)
-	// fork | total | pass | root | logs | timeout | crash | unsupported | error | pass %
-	if !strings.Contains(string(board), "| Cancun | 2 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 50.0% |") {
+	// fork | total | pass | fail | unsupported | error | pass %
+	if !strings.Contains(string(board), "| Cancun | 2 | 1 | 1 | 0 | 0 | 50.0% |") {
 		t.Fatalf("scoreboard:\n%s", board)
 	}
 
@@ -199,5 +199,35 @@ func TestRunFilterSkipsOtherCases(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 10*time.Second {
 		t.Fatalf("filtered run took %v: the excluded looping case was executed", elapsed)
+	}
+}
+
+// TestRunMemoryCeilingIsCrash uses a contract that fills 16 MiB of memory and
+// then calls itself, so each nested frame holds another 16 MiB. The worker
+// must stop itself at the ceiling instead of exhausting the machine.
+func TestRunMemoryCeilingIsCrash(t *testing.T) {
+	dir := t.TempDir()
+	fixtures := filepath.Join(dir, "fixtures")
+	// PUSH1 0 PUSH3 0xffffe0 MSTORE, then CALL self with all gas.
+	hog := "0x600062ffffe05260006000600060006000305af1"
+	writeJSON(t, filepath.Join(fixtures, "state_tests", "f.json"), map[string]interface{}{
+		"a_hog":  stateTest(t, hog, "0x7fffffffffffffff"),
+		"b_stop": stateTest(t, "0x00", "0x0186a0"),
+	})
+	lock := filepath.Join(dir, "fixtures.lock")
+	if err := os.WriteFile(lock, []byte("release=test\nsha256=00\nstate_cases=2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	results := filepath.Join(dir, "results.txt")
+	var out, errOut bytes.Buffer
+	if code := run([]string{"-fixtures", fixtures, "-lock", lock, "-timeout", "120s", "-worker-mem", "256",
+		"-results", results}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errOut.String())
+	}
+	got, _ := os.ReadFile(results)
+	lines := strings.Split(strings.TrimSuffix(string(got), "\n"), "\n")
+	if len(lines) != 2 || lines[0] != "f.json::a_hog::Cancun::0\tfail\tcrash: fatal error: worker memory limit exceeded" ||
+		lines[1] != "f.json::b_stop::Cancun::0\tpass\t" {
+		t.Fatalf("results:\n%s", got)
 	}
 }

@@ -54,6 +54,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	check := fs.Bool("check", false, "fail on regressions, errors, count or scoreboard drift")
 	explain := fs.String("v", "", "explain one case by ID")
 	resultsFile := fs.String("results", "", "write one line per case (ID, status, reason; tab-separated) to this file")
+	workerMem := fs.Uint64("worker-mem", 1536, "heap ceiling per worker process in MiB; a case that passes it fails as a crash")
+	parallel := fs.Int("parallel", runtime.GOMAXPROCS(0), "number of worker processes")
 	timeout := fs.Duration("timeout", 20*time.Second, "per-case time limit; longer cases fail with reason timeout")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -84,7 +86,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	results, err := runAll(stateRoot, filter, *timeout)
+	results, err := runAll(stateRoot, filter, *timeout, *workerMem<<20, *parallel)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -100,6 +102,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	fmt.Fprintf(stdout, "ethtest %s: %d/%d pass, %d errors\n", lock["release"], pass, len(results), errs)
+	fmt.Fprintf(stdout, "breakdown: %s\n", ethtest.Breakdown(results))
 
 	if *resultsFile != "" {
 		var b strings.Builder
@@ -176,7 +179,7 @@ func checkAll(fixtures string, p paths, lock map[string]string, results []ethtes
 	return failed
 }
 
-func runAll(stateRoot string, filter *regexp.Regexp, timeout time.Duration) ([]ethtest.Result, error) {
+func runAll(stateRoot string, filter *regexp.Regexp, timeout time.Duration, memLimit uint64, parallel int) ([]ethtest.Result, error) {
 	filterSource := ""
 	if filter != nil {
 		filterSource = filter.String()
@@ -200,12 +203,12 @@ func runAll(stateRoot string, filter *regexp.Regexp, timeout time.Duration) ([]e
 	out := make([]fileResult, len(files))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
-	for w := 0; w < runtime.GOMAXPROCS(0); w++ {
+	for w := 0; w < parallel; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				rs, err := runFileIsolated(self, stateRoot, files[i], filterSource, timeout)
+				rs, err := runFileIsolated(self, stateRoot, files[i], filterSource, timeout, memLimit)
 				out[i] = fileResult{rs, err}
 			}
 		}()

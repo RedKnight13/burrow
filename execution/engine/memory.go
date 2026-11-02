@@ -45,9 +45,12 @@ type Memory interface {
 // Get a new DynamicMemory (note that although we take a maximumCapacity of uint64 we currently
 // limit the maximum to int32 at runtime because we are using a single slice which we cannot guarantee
 // to be indexable above int32 or all validators
+//
+// Memory starts empty (initialCapacity only pre-allocates) and its size, as
+// reported by Capacity and so by MSIZE, grows in 32-byte words as on Ethereum.
 func NewDynamicMemory(initialCapacity, maximumCapacity uint64, errSink errors.Sink) Memory {
 	return &dynamicMemory{
-		slice:           make([]byte, initialCapacity),
+		slice:           make([]byte, 0, initialCapacity),
 		maximumCapacity: maximumCapacity,
 		errSink:         errSink,
 	}
@@ -96,13 +99,31 @@ func (mem *dynamicMemory) Write(offset *big.Int, value []byte) {
 	}
 }
 
+// Capacity is the active memory size in bytes: the highest byte touched,
+// rounded up to a whole 32-byte word.
 func (mem *dynamicMemory) Capacity() *big.Int {
-	return big.NewInt(int64(len(mem.slice)))
+	words := (uint64(len(mem.slice)) + 31) / 32
+	return new(big.Int).SetUint64(words * 32)
+}
+
+// end returns offset + length, or an error if that overflows 64 bits.
+func end(offset, length uint64) (uint64, error) {
+	if offset > math.MaxUint64-length {
+		return 0, fmt.Errorf("memory access at offset %d with length %d overflows", offset, length)
+	}
+	return offset + length, nil
 }
 
 func (mem *dynamicMemory) read(offset, length uint64) ([]byte, error) {
-	capacity := offset + length
-	err := mem.ensureCapacity(capacity)
+	if length == 0 {
+		// A zero-length access is valid at any offset and does not expand memory.
+		return []byte{}, nil
+	}
+	capacity, err := end(offset, length)
+	if err != nil {
+		return nil, err
+	}
+	err = mem.ensureCapacity(capacity)
 	if err != nil {
 		return nil, err
 	}
@@ -112,8 +133,14 @@ func (mem *dynamicMemory) read(offset, length uint64) ([]byte, error) {
 }
 
 func (mem *dynamicMemory) write(offset uint64, value []byte) error {
-	capacity := offset + uint64(len(value))
-	err := mem.ensureCapacity(capacity)
+	if len(value) == 0 {
+		return nil
+	}
+	capacity, err := end(offset, uint64(len(value)))
+	if err != nil {
+		return err
+	}
+	err = mem.ensureCapacity(capacity)
 	if err != nil {
 		return err
 	}

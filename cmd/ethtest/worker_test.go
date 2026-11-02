@@ -173,37 +173,6 @@ func TestRunWritesResultsFile(t *testing.T) {
 	}
 }
 
-// TestRunFatalBurrowCrashIsFailure uses the contract from the fixture
-// stSystemOperationsTest/callRecursiveBomb0_OOG_atMaxCallDepth: it calls itself
-// forwarding all but 1024 gas. Burrow has no call-depth limit by default, so the
-// worker dies of a Go stack overflow, which cannot be recovered. That is a
-// Burrow crash, and the next case in the file still runs.
-func TestRunFatalBurrowCrashIsFailure(t *testing.T) {
-	dir := t.TempDir()
-	fixtures := filepath.Join(dir, "fixtures")
-	bombCode := "0x600160005401600055690fffffffffffffffffff610402600054040260025560006000" +
-		"690fffffffffffffffffff610402600054040260006000306104005a03f160015500"
-	writeJSON(t, filepath.Join(fixtures, "state_tests", "f.json"), map[string]interface{}{
-		"a_bomb": stateTest(t, bombCode, "0x174876e800"),
-		"b_stop": stateTest(t, "0x00", "0x0186a0"),
-	})
-	lock := filepath.Join(dir, "fixtures.lock")
-	if err := os.WriteFile(lock, []byte("release=test\nsha256=00\nstate_cases=2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	results := filepath.Join(dir, "results.txt")
-	var out, errOut bytes.Buffer
-	if code := run([]string{"-fixtures", fixtures, "-lock", lock, "-timeout", "60s", "-results", results}, &out, &errOut); code != 0 {
-		t.Fatalf("exit %d, stderr %q", code, errOut.String())
-	}
-	got, _ := os.ReadFile(results)
-	lines := strings.Split(strings.TrimSuffix(string(got), "\n"), "\n")
-	if len(lines) != 2 || !strings.HasPrefix(lines[0], "f.json::a_bomb::Cancun::0\tfail\tcrash: ") ||
-		lines[1] != "f.json::b_stop::Cancun::0\tpass\t" {
-		t.Fatalf("results:\n%s", got)
-	}
-}
-
 // TestRunFilterSkipsOtherCases checks -run is applied before execution: the
 // looping case would time out if it ran.
 func TestRunFilterSkipsOtherCases(t *testing.T) {

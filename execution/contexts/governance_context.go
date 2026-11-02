@@ -2,6 +2,7 @@ package contexts
 
 import (
 	"fmt"
+	"github.com/hyperledger/burrow/binary"
 	"math/big"
 
 	"github.com/hyperledger/burrow/acm"
@@ -73,7 +74,7 @@ func (ctx *GovernanceContext) UpdateAccount(account *acm.Account, update *spec.T
 		AccountUpdate: update,
 	}
 	if update.Balances().HasNative() {
-		account.Balance = update.Balances().GetNative(0)
+		account.Balance = binary.NewUint256(update.Balances().GetNative(0))
 	}
 	if update.Balances().HasPower() {
 		if update.PublicKey == nil {

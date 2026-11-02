@@ -164,7 +164,7 @@ func MakeGenesisState(db dbm.DB, genesisDoc *genesis.GenesisDoc) (*State, error)
 		perm := genAcc.Permissions
 		acc := &acm.Account{
 			Address:     genAcc.Address,
-			Balance:     genAcc.Amount,
+			Balance:     binary.NewUint256(genAcc.Amount),
 			Permissions: perm,
 		}
 		err := s.writeState.UpdateAccount(acc)

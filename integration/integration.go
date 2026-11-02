@@ -154,7 +154,9 @@ func TestGenesisDoc(addressables []*acm.PrivateAccount, vals ...int) *genesis.Ge
 	accounts := make(map[string]*acm.Account, len(addressables))
 	for i, pa := range addressables {
 		account := acm.FromAddressable(pa)
-		account.Balance += 1 << 32
+		if err := account.AddToBalance(1 << 32); err != nil {
+			panic(err)
+		}
 		account.Permissions = permission.AllAccountPermissions.Clone()
 		accounts[fmt.Sprintf("user_%v", i)] = account
 	}

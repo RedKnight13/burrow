@@ -260,7 +260,7 @@ func TestCallPermission(t *testing.T) {
 	simpleContractAddr := crypto.NewContractAddress(users[0].GetAddress(), []byte{100})
 	simpleAcc := &acm.Account{
 		Address:     simpleContractAddr,
-		Balance:     0,
+		Balance:     NewUint256(0),
 		EVMCode:     []byte{0x60},
 		Sequence:    0,
 		Permissions: permission.ZeroAccountPermissions,
@@ -281,7 +281,7 @@ func TestCallPermission(t *testing.T) {
 	caller1ContractAddr := crypto.NewContractAddress(users[0].GetAddress(), []byte{101})
 	caller1Acc := &acm.Account{
 		Address:     caller1ContractAddr,
-		Balance:     10000,
+		Balance:     NewUint256(10000),
 		EVMCode:     contractCode,
 		Sequence:    0,
 		Permissions: permission.ZeroAccountPermissions,
@@ -322,7 +322,7 @@ func TestCallPermission(t *testing.T) {
 	caller2ContractAddr := crypto.NewContractAddress(users[0].GetAddress(), []byte{102})
 	caller2Acc := &acm.Account{
 		Address:     caller2ContractAddr,
-		Balance:     1000,
+		Balance:     NewUint256(1000),
 		EVMCode:     contractCode2,
 		Sequence:    0,
 		Permissions: permission.ZeroAccountPermissions,
@@ -453,7 +453,7 @@ func TestCreatePermission(t *testing.T) {
 	contractAddr = crypto.NewContractAddress(users[0].GetAddress(), []byte{110})
 	contractAcc = &acm.Account{
 		Address:     contractAddr,
-		Balance:     1000,
+		Balance:     NewUint256(1000),
 		EVMCode:     code,
 		Sequence:    0,
 		Permissions: permission.ZeroAccountPermissions,
@@ -570,7 +570,7 @@ func TestCreateAccountPermission(t *testing.T) {
 	caller1ContractAddr := crypto.NewContractAddress(users[4].GetAddress(), []byte{101})
 	caller1Acc := &acm.Account{
 		Address:     caller1ContractAddr,
-		Balance:     0,
+		Balance:     NewUint256(0),
 		EVMCode:     contractCode,
 		Sequence:    0,
 		Permissions: permission.ZeroAccountPermissions,
@@ -636,7 +636,7 @@ func TestSNativeCALL(t *testing.T) {
 	// make the main contract once
 	doug := &acm.Account{
 		Address:     DougAddress,
-		Balance:     0,
+		Balance:     NewUint256(0),
 		EVMCode:     nil,
 		Sequence:    0,
 		Permissions: permission.ZeroAccountPermissions,
@@ -1155,7 +1155,7 @@ func TestContractSend(t *testing.T) {
 	require.NoError(t, err)
 
 	sendAmt := uint64(10)
-	acc2Balance := acc2.Balance
+	acc2Balance := balanceOf(acc2)
 
 	// call the contract, triggering the send
 	tx := &payload.CallTx{
@@ -1174,7 +1174,7 @@ func TestContractSend(t *testing.T) {
 	require.NoError(t, err)
 
 	acc2 = getAccount(t, st, acc2.Address)
-	require.Equal(t, sendAmt+acc2Balance, acc2.Balance, "value should be transferred")
+	require.Equal(t, sendAmt+acc2Balance, balanceOf(acc2), "value should be transferred")
 
 	addressNonExistent := newAddress("nobody")
 
@@ -1194,7 +1194,7 @@ func TestContractSend(t *testing.T) {
 	require.NoError(t, err)
 
 	accNonExistent := getAccount(t, st, addressNonExistent)
-	assert.Equal(t, sendAmt, accNonExistent.Balance, "value should have been transferred")
+	assert.Equal(t, sendAmt, balanceOf(accNonExistent), "value should have been transferred")
 }
 
 func TestMerklePanic(t *testing.T) {
@@ -1317,14 +1317,14 @@ func TestTxs(t *testing.T) {
 		err := makeExecutor(stateSendTx).signExecuteCommit(tx, privAccounts[0])
 		require.NoError(t, err)
 		newAcc0 := getAccount(t, stateSendTx, acc0.Address)
-		if acc0.Balance-1 != newAcc0.Balance {
+		if balanceOf(acc0)-1 != balanceOf(newAcc0) {
 			t.Errorf("Unexpected newAcc0 balance. Expected %v, got %v",
-				acc0.Balance-1, newAcc0.Balance)
+				balanceOf(acc0)-1, balanceOf(newAcc0))
 		}
 		newAcc1 := getAccount(t, stateSendTx, acc1.Address)
-		if acc1.Balance+1 != newAcc1.Balance {
+		if balanceOf(acc1)+1 != balanceOf(newAcc1) {
 			t.Errorf("Unexpected newAcc1 balance. Expected %v, got %v",
-				acc1.Balance+1, newAcc1.Balance)
+				balanceOf(acc1)+1, balanceOf(newAcc1))
 		}
 	}
 
@@ -1350,14 +1350,14 @@ func TestTxs(t *testing.T) {
 		err = makeExecutor(stateCallTx).signExecuteCommit(tx, privAccounts[0])
 		require.NoError(t, err)
 		newAcc0 := getAccount(t, stateCallTx, acc0.Address)
-		if acc0.Balance-1 != newAcc0.Balance {
+		if balanceOf(acc0)-1 != balanceOf(newAcc0) {
 			t.Errorf("Unexpected newAcc0 balance. Expected %v, got %v",
-				acc0.Balance-1, newAcc0.Balance)
+				balanceOf(acc0)-1, balanceOf(newAcc0))
 		}
 		newAcc1 = getAccount(t, stateCallTx, acc1.Address)
-		if acc1.Balance+1 != newAcc1.Balance {
+		if balanceOf(acc1)+1 != balanceOf(newAcc1) {
 			t.Errorf("Unexpected newAcc1 balance. Expected %v, got %v",
-				acc1.Balance+1, newAcc1.Balance)
+				balanceOf(acc1)+1, balanceOf(newAcc1))
 		}
 	}
 
@@ -1397,9 +1397,9 @@ proof-of-work chain as proof of what happened while they were gone `
 		require.NoError(t, err)
 
 		newAcc0 := getAccount(t, stateNameTx, acc0.Address)
-		if acc0.Balance-entryAmount != newAcc0.Balance {
+		if balanceOf(acc0)-entryAmount != balanceOf(newAcc0) {
 			t.Errorf("Unexpected newAcc0 balance. Expected %v, got %v",
-				acc0.Balance-entryAmount, newAcc0.Balance)
+				balanceOf(acc0)-entryAmount, balanceOf(newAcc0))
 		}
 		entry, err := stateNameTx.GetName(entryName)
 		require.NoError(t, err)
@@ -1427,7 +1427,7 @@ func TestSelfDestruct(t *testing.T) {
 	acc0PubKey := privAccounts[0].GetPublicKey()
 	acc1 := getAccount(t, st, privAccounts[1].GetAddress())
 	acc2 := getAccount(t, st, privAccounts[2].GetAddress())
-	sendingAmount, refundedBalance, oldBalance := uint64(1), acc1.Balance, acc2.Balance
+	sendingAmount, refundedBalance, oldBalance := uint64(1), balanceOf(acc1), balanceOf(acc2)
 
 	newAcc1 := getAccount(t, st, acc1.Address)
 
@@ -1461,9 +1461,9 @@ func TestSelfDestruct(t *testing.T) {
 	// acc2 should receive the sent funds and the contracts balance
 	newAcc2 := getAccount(t, st, acc2.Address)
 	newBalance := sendingAmount + refundedBalance + oldBalance
-	if newAcc2.Balance != newBalance {
+	if balanceOf(newAcc2) != newBalance {
 		t.Errorf("Unexpected newAcc2 balance. Expected %v, got %v",
-			newAcc2.Balance, newBalance)
+			balanceOf(newAcc2), newBalance)
 	}
 	accRemoved, err := st.GetAccount(acc1.Address)
 	require.NoError(t, err)
@@ -1904,4 +1904,14 @@ func newAddress(name string) crypto.Address {
 	hasher := ripemd160.New()
 	hasher.Write([]byte(name))
 	return crypto.MustAddressFromBytes(hasher.Sum(nil))
+}
+
+// balanceOf returns a test account's balance, which these tests keep within
+// 64 bits.
+func balanceOf(acc *acm.Account) uint64 {
+	n, ok := acc.Balance.Uint64()
+	if !ok {
+		panic(fmt.Sprintf("test balance %v exceeds 64 bits", acc.Balance))
+	}
+	return n
 }

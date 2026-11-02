@@ -47,7 +47,7 @@ func (m *MockSource) Recv() (*Dump, error) {
 
 		row.Account = &acm.Account{
 			Address: addr,
-			Balance: m.rand.Uint64(),
+			Balance: binary.NewUint256(m.rand.Uint64()),
 		}
 
 		if m.Accounts%2 > 0 {

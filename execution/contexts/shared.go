@@ -2,6 +2,7 @@ package contexts
 
 import (
 	"fmt"
+	"github.com/hyperledger/burrow/binary"
 
 	"github.com/hyperledger/burrow/acm"
 	"github.com/hyperledger/burrow/acm/acmstate"
@@ -79,7 +80,6 @@ func getOrMakeOutput(accountGetter acmstate.AccountGetter, accs map[crypto.Addre
 		acc = &acm.Account{
 			Address:     outputAddress,
 			Sequence:    0,
-			Balance:     0,
 			Permissions: permission.ZeroAccountPermissions,
 		}
 	}
@@ -102,7 +102,7 @@ func adjustByInputs(accs map[crypto.Address]*acm.Account, ins []*payload.TxInput
 		if acc == nil {
 			return fmt.Errorf("adjustByInputs() expects account in accounts, but account %s not found", in.Address)
 		}
-		if acc.Balance < in.Amount {
+		if acc.Balance.Cmp(binary.NewUint256(in.Amount)) < 0 {
 			return fmt.Errorf("adjustByInputs() expects sufficient funds but account %s only has balance %v and "+
 				"we are deducting %v", in.Address, acc.Balance, in.Amount)
 		}

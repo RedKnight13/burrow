@@ -2,6 +2,7 @@ package genesis
 
 import (
 	"fmt"
+	"github.com/hyperledger/burrow/binary"
 	"math/rand"
 	"time"
 
@@ -30,7 +31,7 @@ func (dg *deterministicGenesis) GenesisDoc(numAccounts int, numValidators int) (
 		acc := Account{
 			BasicAccount: BasicAccount{
 				Address: account.GetAddress(),
-				Amount:  account.Balance,
+				Amount:  genesisAmount(account.Balance),
 			},
 			Permissions: defaultPerms.Clone(), // This will get copied into each state.Account.
 		}
@@ -88,9 +89,11 @@ func (dg *deterministicGenesis) Account(minBalance uint64) (*acm.Account, *acm.P
 		Address:     privAccount.Address,
 		PublicKey:   &privAccount.PublicKey,
 		Sequence:    uint64(dg.random.Int()),
-		Balance:     minBalance,
+		Balance:     binary.NewUint256(minBalance),
 		Permissions: perms,
 	}
-	acc.Balance += uint64(dg.random.Int())
+	if err := acc.AddToBalance(uint64(dg.random.Int())); err != nil {
+		panic(err)
+	}
 	return acc, privAccount.PrivateAccount()
 }

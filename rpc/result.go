@@ -142,7 +142,7 @@ type AccountHumanReadable struct {
 	Address     crypto.Address
 	PublicKey   *crypto.PublicKey
 	Sequence    uint64
-	Balance     uint64
+	Balance     binary.Uint256
 	Code        []string
 	Permissions []string
 	Roles       []string

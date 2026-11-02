@@ -1,6 +1,7 @@
 package contexts
 
 import (
+	"github.com/hyperledger/burrow/binary"
 	"strings"
 	"testing"
 
@@ -96,7 +97,7 @@ func newAccountFromPrivKey(privKey crypto.PrivateKey) *acm.Account {
 	return &acm.Account{
 		Address:   address,
 		PublicKey: pubKey,
-		Balance:   1337,
+		Balance:   binary.NewUint256(1337),
 	}
 }
 

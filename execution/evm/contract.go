@@ -334,7 +334,7 @@ func (c *Contract) execute(st engine.State, params engine.CallParams) ([]byte, e
 			address := stack.PopAddress()
 			maybe.PushError(engine.UseGasNegative(params.Gas, engine.GasGetAccount))
 			balance := engine.MustGetAccount(st.CallFrame, maybe, address).Balance
-			stack.Push64(balance)
+			stack.Push(Word256(balance))
 			c.debugf(" => %v (%v)\n", balance, address)
 
 		case ORIGIN: // 0x32
@@ -739,7 +739,7 @@ func (c *Contract) execute(st engine.State, params engine.CallParams) ([]byte, e
 			}
 			balance := engine.MustGetAccount(st.CallFrame, maybe, params.Callee).Balance
 			maybe.PushError(engine.UpdateAccount(st.CallFrame, receiver, func(account *acm.Account) error {
-				return account.AddToBalance(balance)
+				return account.Credit(balance)
 			}))
 			maybe.PushError(engine.RemoveAccount(st.CallFrame, params.Callee))
 			c.debugf(" => (%X) %v\n", receiver[:4], balance)

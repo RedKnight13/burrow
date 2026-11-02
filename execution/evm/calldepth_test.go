@@ -61,3 +61,30 @@ func TestDefaultLimits(t *testing.T) {
 		t.Fatalf("defaults: call depth %d, stack %d; want 1024, 1024", opts.CallStackMaxDepth, opts.DataStackMaxDepth)
 	}
 }
+
+// TestCreateAtDepthLimitPushesZero: a CREATE that would exceed the call depth
+// fails only itself, as on Ethereum. With a limit of 1, the outer CREATE runs
+// init code at depth 1 whose own CREATE is refused.
+func TestCreateAtDepthLimitPushesZero(t *testing.T) {
+	inner := []byte{0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0xf0, 0x00} // CREATE(0, 0, 0) STOP
+	code := append([]byte{0x67}, inner...)                          // PUSH8 inner
+	code = append(code,
+		0x60, 0x00, 0x52, // MSTORE at 0: inner occupies bytes 24..31
+		0x60, 0x08, 0x60, 0x18, 0x60, 0x00, 0xf0, // CREATE(value 0, offset 24, size 8)
+		0x60, 0x00, 0x55, // SSTORE(0, created address)
+		0x00)
+	st := acmstate.NewMemoryState()
+	origin := newAccount(t, st, "origin")
+	self := makeAccountWithCode(t, st, "self", code)
+	vm := New(engine.Options{CallStackMaxDepth: 1})
+	if _, err := call(vm, st, origin, self, code, nil, big.NewInt(1_000_000)); err != nil {
+		t.Fatalf("outer call failed: %v", err)
+	}
+	got, err := st.GetStorage(self, binary.Word256{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 || new(big.Int).SetBytes(got).Sign() == 0 {
+		t.Fatal("outer CREATE did not succeed")
+	}
+}

@@ -4,21 +4,16 @@ package ethtest
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"path/filepath"
 	"sort"
-	"time"
+	"strings"
 
-	"github.com/btcsuite/btcd/btcec"
 	"github.com/hyperledger/burrow/acm/acmstate"
-	"github.com/hyperledger/burrow/crypto"
-	"github.com/hyperledger/burrow/execution/engine"
 	"github.com/hyperledger/burrow/execution/ethtest/fixture"
-	"github.com/hyperledger/burrow/execution/evm"
-	"github.com/hyperledger/burrow/execution/exec"
+	"github.com/hyperledger/burrow/execution/evm/ethtx"
 )
 
 type Status int
@@ -48,23 +43,8 @@ type Result struct {
 	Reason string
 }
 
-// callInput is everything handed to Burrow's EVM for one case.
-type callInput struct {
-	state      *acmstate.MemoryState
-	blockchain engine.Blockchain
-	sink       exec.EventSink
-	params     engine.CallParams
-	code       []byte
-}
-
-// execute runs one call through Burrow's EVM. A fresh EVM with a fixed nonce is
-// used per case so CREATE addresses do not depend on run order. Its error is
-// not inspected: the post-state comparison decides the result.
-var execute = func(c callInput) error {
-	vm := evm.New(engine.Options{Nonce: []byte("ethtest")})
-	_, err := vm.Execute(c.state, c.blockchain, c.sink, c.params, c.code)
-	return err
-}
+// apply is the transaction processor under test. Tests may replace it.
+var apply = ethtx.Apply
 
 // RunCase runs post[fork][i] of t.
 func RunCase(id string, t fixture.StateTest, fork string, i int) Result {
@@ -72,10 +52,12 @@ func RunCase(id string, t fixture.StateTest, fork string, i int) Result {
 	return res
 }
 
-// runCase also returns the post-execution state (nil when Burrow was not run),
-// for diffing. onEnter and onLeave, if set, are called just before Burrow's
-// EVM starts and just after it returns.
-// A panic inside the EVM is a Burrow defect ("crash"); any other panic is a
+// runCase feeds the case's signed transaction (txbytes) through Burrow's
+// transaction processor and compares the resulting state root and logs hash
+// with the fixture. It also returns the post-state (nil when Burrow was not
+// run), for diffing. onEnter and onLeave, if set, are called just before Burrow
+// starts and just after it returns. A
+// panic inside Burrow is a Burrow defect ("crash"); any other panic is a
 // harness bug (Error).
 func runCase(id string, t fixture.StateTest, fork string, i int, onEnter, onLeave func()) (res Result, st *acmstate.MemoryState) {
 	res = Result{ID: id, Fork: fork}
@@ -98,30 +80,13 @@ func runCase(id string, t fixture.StateTest, fork string, i int, onEnter, onLeav
 		return harnessError(fmt.Errorf("no post entry %s[%d]", fork, i))
 	}
 	post := posts[i]
-	tx := t.Transaction
-
-	switch {
-	case post.ExpectException != "":
-		return fail("unsupported: tx validation")
-	case tx.To == "":
-		return fail("unsupported: create tx")
-	case present(tx.AccessLists) || present(tx.BlobVersionedHashes) || present(tx.AuthorizationList):
-		return fail("unsupported: typed tx")
+	if len(post.TxBytes) == 0 {
+		return harnessError(fmt.Errorf("post entry %s[%d] has no txbytes", fork, i))
 	}
-
-	if err := checkIndex(post.Indexes.Data, len(tx.Data), "data"); err != nil {
+	env, err := blockEnv(t)
+	if err != nil {
 		return harnessError(err)
 	}
-	if err := checkIndex(post.Indexes.Gas, len(tx.GasLimit), "gasLimit"); err != nil {
-		return harnessError(err)
-	}
-	if err := checkIndex(post.Indexes.Value, len(tx.Value), "value"); err != nil {
-		return harnessError(err)
-	}
-	data := tx.Data[post.Indexes.Data]
-	gas := tx.GasLimit[post.Indexes.Gas]
-	value := tx.Value[post.Indexes.Value]
-
 	loaded, err := LoadAlloc(t.Pre)
 	var unsupported ErrUnsupported
 	if errors.As(err, &unsupported) {
@@ -130,49 +95,49 @@ func runCase(id string, t fixture.StateTest, fork string, i int, onEnter, onLeav
 	if err != nil {
 		return harnessError(err)
 	}
-	to, err := parseAddress(tx.To)
-	if err != nil {
-		return harnessError(err)
-	}
-	if _, ok := t.Pre[tx.To]; !ok {
-		return fail("unsupported: call to new account")
-	}
-	sender, err := txSender(tx)
-	if err != nil {
-		return harnessError(err)
-	}
-	callee, err := loaded.GetAccount(to)
-	if err != nil {
-		return harnessError(err)
-	}
 
-	sink := &logSink{}
 	st = loaded
 	if onEnter != nil {
 		onEnter()
 	}
-	crash := guarded(callInput{
-		state: st,
-		blockchain: &engine.TestBlockchain{
-			BlockHeight: t.Env.Number.Big().Uint64(),
-			BlockTime:   time.Unix(t.Env.Timestamp.Big().Int64(), 0),
-		},
-		sink: sink,
-		params: engine.CallParams{
-			Origin: sender,
-			Caller: sender,
-			Callee: to,
-			Input:  data,
-			Value:  *new(big.Int).Set(value.Big()),
-			Gas:    new(big.Int).Set(gas.Big()),
-		},
-		code: callee.EVMCode,
-	})
+	out, crash := guardedApply(post.TxBytes, st, env)
 	if onLeave != nil {
 		onLeave()
 	}
 	if crash != "" {
 		return fail(crash)
+	}
+	if out.Status == ethtx.Unsupported {
+		return fail("unsupported: " + string(out.Reason))
+	}
+
+	if post.ExpectException != "" {
+		want, unknown := expectedReasons(post.ExpectException)
+		switch {
+		case len(want) == 0:
+			return fail("unsupported: exception " + strings.Join(unknown, "|"))
+		case out.Status != ethtx.Invalid:
+			return fail("exception: not raised")
+		case !containsReason(want, out.Reason):
+			return fail("exception: got " + string(out.Reason))
+		}
+	} else if out.Status == ethtx.Invalid {
+		return fail("exception: unexpected " + string(out.Reason))
+	}
+
+	if out.Status != ethtx.Invalid {
+		if t.Transaction.Sender != "" {
+			want, err := parseAddress(t.Transaction.Sender)
+			if err != nil {
+				return harnessError(err)
+			}
+			if out.Sender != want {
+				return fail("sender")
+			}
+		}
+		if err := out.RWSet.ApplyTo(st); err != nil {
+			return harnessError(err)
+		}
 	}
 
 	root, err := StateRoot(st, hasZeroAddress(t.Pre))
@@ -182,7 +147,7 @@ func runCase(id string, t fixture.StateTest, fork string, i int, onEnter, onLeav
 	if !bytes.Equal(root[:], post.Hash) {
 		return fail("root")
 	}
-	logs := LogsHash(sink.logs)
+	logs := LogsHash(out.Logs)
 	if !bytes.Equal(logs[:], post.Logs) {
 		return fail("logs")
 	}
@@ -190,50 +155,74 @@ func runCase(id string, t fixture.StateTest, fork string, i int, onEnter, onLeav
 	return res, st
 }
 
-// guarded runs Burrow's EVM and turns a panic into a crash reason.
-func guarded(c callInput) (crash string) {
+// guardedApply runs Burrow's transaction processor and turns a panic inside
+// it into a crash reason.
+func guardedApply(raw []byte, st acmstate.Reader, env ethtx.Env) (out ethtx.Result, crash string) {
 	defer func() {
 		if r := recover(); r != nil {
 			crash = fmt.Sprintf("crash: panic: %v", r)
 		}
 	}()
-	_ = execute(c)
-	return ""
+	return apply(raw, st, env), ""
 }
 
-// present reports whether an optional transaction field carries anything.
-func present(raw json.RawMessage) bool {
-	s := string(bytes.TrimSpace(raw))
-	return s != "" && s != "null" && s != "[]"
-}
-
-func checkIndex(i, n int, field string) error {
-	if i < 0 || i >= n {
-		return fmt.Errorf("index %d out of range for transaction %s (len %d)", i, field, n)
-	}
-	return nil
-}
-
-func txSender(tx fixture.Transaction) (crypto.Address, error) {
-	if tx.Sender != "" {
-		return parseAddress(tx.Sender)
-	}
-	if len(tx.SecretKey) == 0 {
-		return crypto.ZeroAddress, fmt.Errorf("transaction has neither sender nor secretKey")
-	}
-	return senderFromKey(tx.SecretKey)
-}
-
-// senderFromKey derives an Ethereum address: the last 20 bytes of the
-// keccak256 of the uncompressed public key without its 0x04 prefix.
-func senderFromKey(key []byte) (crypto.Address, error) {
-	_, pub := btcec.PrivKeyFromBytes(btcec.S256(), key)
-	hash := crypto.Keccak256(pub.SerializeUncompressed()[1:])
-	addr, err := crypto.AddressFromBytes(hash[12:])
+// blockEnv builds the processor's block environment from the fixture.
+func blockEnv(t fixture.StateTest) (ethtx.Env, error) {
+	coinbase, err := parseAddress(t.Env.Coinbase)
 	if err != nil {
-		return crypto.ZeroAddress, fmt.Errorf("sender from secret key: %w", err)
+		return ethtx.Env{}, fmt.Errorf("env coinbase: %w", err)
 	}
-	return addr, nil
+	chainID := big.NewInt(1)
+	if t.Config.ChainID.Int != nil {
+		chainID = t.Config.ChainID.Int
+	}
+	for _, q := range []fixture.Quantity{t.Env.Number, t.Env.Timestamp, t.Env.GasLimit} {
+		if !q.Big().IsUint64() {
+			return ethtx.Env{}, fmt.Errorf("env value %v exceeds 64 bits", q.Big())
+		}
+	}
+	return ethtx.Env{
+		ChainID:   chainID,
+		Coinbase:  coinbase,
+		Number:    t.Env.Number.Big().Uint64(),
+		Timestamp: t.Env.Timestamp.Big().Uint64(),
+		GasLimit:  t.Env.GasLimit.Big().Uint64(),
+	}, nil
+}
+
+// exceptionReasons maps execution-specs exception names to the processor's
+// reasons. Names not listed are rules Burrow does not implement yet.
+var exceptionReasons = map[string]ethtx.Reason{
+	"TransactionException.INTRINSIC_GAS_TOO_LOW":      ethtx.ReasonIntrinsicGas,
+	"TransactionException.INSUFFICIENT_ACCOUNT_FUNDS": ethtx.ReasonInsufficientFunds,
+	"TransactionException.INVALID_SIGNATURE_VRS":      ethtx.ReasonSignature,
+	"TransactionException.INVALID_CHAINID":            ethtx.ReasonChainID,
+	"TransactionException.NONCE_IS_MAX":               ethtx.ReasonNonceMax,
+	"TransactionException.NONCE_MISMATCH_TOO_LOW":     ethtx.ReasonNonceTooLow,
+	"TransactionException.NONCE_MISMATCH_TOO_HIGH":    ethtx.ReasonNonceTooHigh,
+	"TransactionException.GAS_ALLOWANCE_EXCEEDED":     ethtx.ReasonGasLimit,
+}
+
+// expectedReasons splits an expectException value ("A|B") into the reasons
+// Burrow knows and the short names of those it does not.
+func expectedReasons(expect string) (known []ethtx.Reason, unknown []string) {
+	for _, name := range strings.Split(expect, "|") {
+		if r, ok := exceptionReasons[name]; ok {
+			known = append(known, r)
+		} else {
+			unknown = append(unknown, strings.TrimPrefix(name, "TransactionException."))
+		}
+	}
+	return known, unknown
+}
+
+func containsReason(list []ethtx.Reason, r ethtx.Reason) bool {
+	for _, x := range list {
+		if x == r {
+			return true
+		}
+	}
+	return false
 }
 
 // Case is one entry of a fixture's post[fork] array.

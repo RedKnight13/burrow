@@ -60,8 +60,14 @@ type PostEntry struct {
 	Hash            Bytes   `json:"hash"`
 	Logs            Bytes   `json:"logs"`
 	Indexes         Indexes `json:"indexes"`
+	TxBytes         Bytes   `json:"txbytes"`
 	ExpectException string  `json:"expectException"`
 	State           Alloc   `json:"state"`
+}
+
+// Config carries chain parameters; only the chain ID is used.
+type Config struct {
+	ChainID Quantity `json:"chainid"`
 }
 
 type StateTest struct {
@@ -69,6 +75,7 @@ type StateTest struct {
 	Pre         Alloc                  `json:"pre"`
 	Transaction Transaction            `json:"transaction"`
 	Post        map[string][]PostEntry `json:"post"`
+	Config      Config                 `json:"config"`
 }
 
 type GenesisHeader struct {

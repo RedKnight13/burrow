@@ -177,6 +177,10 @@ func checkAll(fixtures string, p paths, lock map[string]string, results []ethtes
 }
 
 func runAll(stateRoot string, filter *regexp.Regexp, timeout time.Duration) ([]ethtest.Result, error) {
+	filterSource := ""
+	if filter != nil {
+		filterSource = filter.String()
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("locating ethtest binary for workers: %w", err)
@@ -201,7 +205,7 @@ func runAll(stateRoot string, filter *regexp.Regexp, timeout time.Duration) ([]e
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				rs, err := runFileIsolated(self, stateRoot, files[i], timeout)
+				rs, err := runFileIsolated(self, stateRoot, files[i], filterSource, timeout)
 				out[i] = fileResult{rs, err}
 			}
 		}()

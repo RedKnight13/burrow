@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -23,15 +24,20 @@ const workerEnv = "ETHTEST_WORKER"
 // worker runs the cases of one file after the given ID, in ID order, and
 // reports each on stdout as "start\tID", then "exec\tID" as Burrow's EVM is
 // entered, then "result\tID\tstatus\treason".
-// Args: stateRoot path [afterID].
+// Args: stateRoot path afterID filter; afterID and filter may be empty.
 func worker(args []string, stdout, stderr io.Writer) int {
-	if len(args) < 2 {
-		fmt.Fprintln(stderr, "worker: want stateRoot path [afterID]")
+	if len(args) != 4 {
+		fmt.Fprintln(stderr, "worker: want stateRoot path afterID filter")
 		return 2
 	}
-	after := ""
-	if len(args) > 2 {
-		after = args[2]
+	after := args[2]
+	var filter *regexp.Regexp
+	if args[3] != "" {
+		var err error
+		if filter, err = regexp.Compile(args[3]); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
 	}
 	cases, err := ethtest.Cases(args[0], args[1])
 	if err != nil {
@@ -40,7 +46,7 @@ func worker(args []string, stdout, stderr io.Writer) int {
 	}
 	w := bufio.NewWriter(stdout)
 	for _, c := range cases {
-		if after != "" && c.ID <= after {
+		if (after != "" && c.ID <= after) || (filter != nil && !filter.MatchString(c.ID)) {
 			continue
 		}
 		fmt.Fprintf(w, "start\t%s\n", c.ID)
@@ -75,15 +81,11 @@ func parseStatus(s string) ethtest.Status {
 // Burrow's EVM, a case that runs longer than timeout is "fail: timeout" and a
 // worker that dies is "fail: crash: ...". Outside it, either is a harness
 // error. Either way the next worker resumes after that case.
-func runFileIsolated(self, stateRoot, path string, timeout time.Duration) ([]ethtest.Result, error) {
+func runFileIsolated(self, stateRoot, path, filter string, timeout time.Duration) ([]ethtest.Result, error) {
 	var results []ethtest.Result
 	after := ""
 	for {
-		args := []string{stateRoot, path}
-		if after != "" {
-			args = append(args, after)
-		}
-		cmd := exec.Command(self, args...)
+		cmd := exec.Command(self, stateRoot, path, after, filter)
 		cmd.Env = append(os.Environ(), workerEnv+"=1")
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hyperledger/burrow/execution/ethtest"
 	"github.com/hyperledger/burrow/execution/ethtest/fixture"
@@ -174,5 +175,29 @@ func TestRunFatalBurrowCrashIsFailure(t *testing.T) {
 	if len(lines) != 2 || !strings.HasPrefix(lines[0], "f.json::a_bomb::Cancun::0\tfail\tcrash: ") ||
 		lines[1] != "f.json::b_stop::Cancun::0\tpass\t" {
 		t.Fatalf("results:\n%s", got)
+	}
+}
+
+// TestRunFilterSkipsOtherCases checks -run is applied before execution: the
+// looping case would time out if it ran.
+func TestRunFilterSkipsOtherCases(t *testing.T) {
+	dir := t.TempDir()
+	fixtures := filepath.Join(dir, "fixtures")
+	writeJSON(t, filepath.Join(fixtures, "state_tests", "f.json"), map[string]interface{}{
+		"a_loop": stateTest(t, "0x5b600056", "0x7fffffffffffffff"),
+		"b_stop": stateTest(t, "0x00", "0x0186a0"),
+	})
+	lock := filepath.Join(dir, "fixtures.lock")
+	if err := os.WriteFile(lock, []byte("release=test\nsha256=00\nstate_cases=2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	start := time.Now()
+	code := run([]string{"-fixtures", fixtures, "-lock", lock, "-run", "b_stop", "-timeout", "30s"}, &out, &errOut)
+	if code != 0 || !strings.Contains(out.String(), "1/1 pass") {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf("filtered run took %v: the excluded looping case was executed", elapsed)
 	}
 }

@@ -58,6 +58,9 @@ func (e *Endorser) Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteRe
 			Message: "ethereum transaction is empty",
 		}, nil
 	}
+	if e.exec == nil {
+		return nil, fmt.Errorf("execute ethereum transaction: no executor")
+	}
 	set, err := e.exec.Execute(ctx, req.EthereumTx, req.Timestamp)
 	if err != nil {
 		return nil, fmt.Errorf("execute ethereum transaction: %w", err)

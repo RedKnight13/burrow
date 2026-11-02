@@ -30,6 +30,14 @@ func (f fixedExecutor) Execute(context.Context, []byte, int64) ([]byte, error) {
 	return f.set, nil
 }
 
+func TestExecuteRequiresExecutor(t *testing.T) {
+	e := NewEndorser(nil)
+	_, err := e.Execute(context.Background(), &ExecuteRequest{EthereumTx: []byte{1}})
+	if err == nil {
+		t.Fatal("missing executor returned no error")
+	}
+}
+
 func TestExecuteRepeatsReadWriteSet(t *testing.T) {
 	want := []byte{1, 2, 3}
 	e := NewEndorser(fixedExecutor{set: want})

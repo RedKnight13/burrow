@@ -9,7 +9,7 @@ import (
 	"sort"
 
 	"github.com/hyperledger/burrow/crypto"
-	"github.com/hyperledger/burrow/execution/ethtest/rlp"
+	"github.com/hyperledger/burrow/execution/evm/rlp"
 )
 
 type entry struct {

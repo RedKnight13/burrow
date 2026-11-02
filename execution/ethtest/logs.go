@@ -5,7 +5,7 @@ package ethtest
 import (
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/execution/errors"
-	"github.com/hyperledger/burrow/execution/ethtest/rlp"
+	"github.com/hyperledger/burrow/execution/evm/rlp"
 	"github.com/hyperledger/burrow/execution/exec"
 )
 

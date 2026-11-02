@@ -16,8 +16,8 @@ import (
 	"github.com/hyperledger/burrow/binary"
 	"github.com/hyperledger/burrow/crypto"
 	"github.com/hyperledger/burrow/execution/ethtest/fixture"
-	"github.com/hyperledger/burrow/execution/ethtest/rlp"
 	"github.com/hyperledger/burrow/execution/ethtest/trie"
+	"github.com/hyperledger/burrow/execution/evm/rlp"
 	"github.com/hyperledger/burrow/permission"
 )
 
